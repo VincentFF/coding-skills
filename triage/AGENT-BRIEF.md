@@ -20,7 +20,7 @@ The issue may sit in `ready-for-agent` for days or weeks. The codebase will chan
 
 Describe **what** the system should do, not **how** to implement it. The agent will explore the codebase fresh and make its own implementation decisions.
 
-- **Good:** "The `SkillConfig` type should accept an optional `schedule` field of type `CronExpression`"
+- **Good:** "The `SkillConfig` struct should accept an optional `Schedule *CronExpression` field"
 - **Bad:** "Open internal/types/skill.go and add a schedule field on line 42"
 - **Good:** "When a user runs `/triage` with no arguments, they should see a summary of issues needing attention"
 - **Bad:** "Add a switch statement in the main handler function"
@@ -54,8 +54,8 @@ Be specific about edge cases and error conditions.
 
 **Key interfaces:**
 - `TypeName` — what needs to change and why
-- `functionName()` return type — what it currently returns vs what it should return
-- Config shape — any new configuration options needed
+- `FunctionName(input T) (Result, error)` — what it currently returns vs what it should return
+- Config struct or struct-tag shape — any new configuration options needed
 
 **Acceptance criteria:**
 - [ ] Specific, testable criterion 1
@@ -87,10 +87,11 @@ Truncation should break at the last word boundary before 1024 characters
 and append "..." to indicate truncation.
 
 **Key interfaces:**
-- The `SkillMetadata` type's `description` field — no type change needed,
+- The `SkillMetadata.Description` field — no type change needed,
   but the validation/processing logic that populates it needs to respect
   word boundaries
-- Any function that reads SKILL.md frontmatter and extracts the description
+- Any function that parses SKILL.md frontmatter, for example a function shaped
+  like `ParseSkillMetadata(...) (SkillMetadata, error)`
 
 **Acceptance criteria:**
 - [ ] Descriptions under 1024 chars are unchanged
@@ -156,7 +157,7 @@ For a PR, "Current behavior" describes the state of the diff, and the brief asks
 **Summary:** Finish the contributor's `--json` output flag for `triage list`
 
 **Current behavior:**
-The PR adds a `--json` flag that serializes the issue list to JSON. The happy
+The PR adds a `--json` flag that encodes the issue list as JSON. The happy
 path works and the diff matches the project's command structure. Two gaps
 remain: errors are still printed as human text (not JSON), and the new flag has
 no test coverage.
@@ -167,14 +168,15 @@ and the command's exit codes are unchanged. The existing human-readable output
 is untouched when the flag is absent.
 
 **Key interfaces:**
-- The command's error path should emit `{ "error": string }` under `--json`
-  instead of the plain-text error
-- Reuse the existing serializer the PR already added; don't introduce a second
+- The command's error path should encode a structured value such as
+  `JSONError{Error: msg}` under `--json` instead of the plain-text error
+- Reuse the existing `encoding/json` path the PR already added; don't introduce
+  a second JSON encoder
 
 **Acceptance criteria:**
 - [ ] `triage list --json` emits valid JSON for both success and error cases
 - [ ] Exit codes match the non-JSON command
-- [ ] A test covers the `--json` success output and one error case
+- [ ] Table-driven tests cover the `--json` success output and one error case
 - [ ] Default (non-JSON) output is byte-for-byte unchanged
 
 **Out of scope:**

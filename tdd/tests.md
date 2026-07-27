@@ -8,13 +8,16 @@
 // GOOD: Tests observable behavior
 func TestUserCanCheckoutWithValidCart(t *testing.T) {
     cart := CreateCart()
+    product := Product{SKU: "book", Price: 10}
     cart.Add(product)
+
+    paymentMethod := PaymentMethod{Token: "tok_test"}
     result, err := Checkout(cart, paymentMethod)
     if err != nil {
-        t.Fatalf("checkout failed: %v", err)
+        t.Fatalf("Checkout() error = %v", err)
     }
     if result.Status != "confirmed" {
-        t.Errorf("status = %q, want %q", result.Status, "confirmed")
+        t.Errorf("Checkout().Status = %q, want %q", result.Status, "confirmed")
     }
 }
 ```
@@ -35,7 +38,9 @@ Characteristics:
 // BAD: Tests implementation details
 func TestCheckoutCallsPaymentServiceProcess(t *testing.T) {
     mockPayment := &MockPaymentService{}
-    Checkout(cart, mockPayment)
+    if _, err := Checkout(cart, mockPayment); err != nil {
+        t.Fatalf("Checkout() error = %v", err)
+    }
     if !mockPayment.ProcessCalled {
         t.Error("expected Process to be called")
     }
@@ -54,10 +59,13 @@ Red flags:
 ```go
 // BAD: Bypasses interface to verify
 func TestCreateUserSavesToDatabase(t *testing.T) {
-    CreateUser(UserInput{Name: "Alice"})
-    row := db.Query("SELECT * FROM users WHERE name = ?", "Alice")
-    if row == nil {
-        t.Error("expected row to exist")
+    if _, err := CreateUser(UserInput{Name: "Alice"}); err != nil {
+        t.Fatalf("CreateUser() error = %v", err)
+    }
+
+    var id string
+    if err := db.QueryRow("SELECT id FROM users WHERE name = ?", "Alice").Scan(&id); err != nil {
+        t.Fatalf("expected database row to exist: %v", err)
     }
 }
 
@@ -65,14 +73,14 @@ func TestCreateUserSavesToDatabase(t *testing.T) {
 func TestCreateUserMakesUserRetrievable(t *testing.T) {
     user, err := CreateUser(UserInput{Name: "Alice"})
     if err != nil {
-        t.Fatalf("create user failed: %v", err)
+        t.Fatalf("CreateUser() error = %v", err)
     }
     retrieved, err := GetUser(user.ID)
     if err != nil {
-        t.Fatalf("get user failed: %v", err)
+        t.Fatalf("GetUser() error = %v", err)
     }
     if retrieved.Name != "Alice" {
-        t.Errorf("name = %q, want %q", retrieved.Name, "Alice")
+        t.Errorf("GetUser().Name = %q, want %q", retrieved.Name, "Alice")
     }
 }
 ```
@@ -83,17 +91,17 @@ func TestCreateUserMakesUserRetrievable(t *testing.T) {
 // BAD: Expected value is recomputed the way the code computes it
 func TestCalculateTotalSumsLineItems(t *testing.T) {
     items := []LineItem{{Price: 10}, {Price: 5}}
-    expected := 0
+    want := 0
     for _, i := range items {
-        expected += i.Price
+        want += i.Price
     }
-    if CalculateTotal(items) != expected {
-        t.Errorf("total mismatch")
+    if got := CalculateTotal(items); got != want {
+        t.Errorf("CalculateTotal() = %d, want %d", got, want)
     }
 }
 
 // GOOD: Expected value is an independent, known literal
-func TestCalculateTotalSumsLineItems(t *testing.T) {
+func TestCalculateTotalSumsLineItemsFromKnownExample(t *testing.T) {
     got := CalculateTotal([]LineItem{{Price: 10}, {Price: 5}})
     if got != 15 {
         t.Errorf("CalculateTotal() = %d, want 15", got)

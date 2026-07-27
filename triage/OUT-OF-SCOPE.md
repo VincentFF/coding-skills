@@ -28,18 +28,18 @@ This project does not support dark mode or user-facing theming.
 ## Why this is out of scope
 
 The rendering pipeline assumes a single color palette defined in
-`ThemeConfig`. Supporting multiple themes would require:
+`ThemeConfig` before rendering begins. Supporting multiple themes would require:
 
-- A theme context provider wrapping the entire component tree
-- Per-component theme-aware style resolution
-- A persistence layer for user theme preferences
+- Passing request- or tenant-specific theme state through the rendering pipeline
+- Per-template theme-aware style resolution
+- Storage and validation for user or tenant theme preferences
 
 This is a significant architectural change that doesn't align with the
 project's focus on content authoring. Theming is a concern for downstream
 consumers who embed or redistribute the output.
 
 ```go
-// The current ThemeConfig struct is not designed for runtime switching:
+// ThemeConfig is resolved before rendering and is not designed for runtime switching.
 type ThemeConfig struct {
     Colors ColorPalette // single palette, resolved at build time
     Fonts  FontStack

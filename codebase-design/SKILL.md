@@ -72,12 +72,26 @@ Good interfaces make testing natural:
 
    ```go
    // Testable
-   func ProcessOrder(order Order, paymentGateway PaymentGateway) error { ... }
+   type PaymentGateway interface {
+       Charge(ctx context.Context, order Order) (Receipt, error)
+   }
+
+   type OrderProcessor struct {
+       gateway PaymentGateway
+   }
+
+   func NewOrderProcessor(gateway PaymentGateway) *OrderProcessor {
+       return &OrderProcessor{gateway: gateway}
+   }
+
+   func (p *OrderProcessor) Process(ctx context.Context, order Order) (Receipt, error) {
+       return p.gateway.Charge(ctx, order)
+   }
 
    // Hard to test
-   func ProcessOrder(order Order) error {
+   func ProcessOrder(ctx context.Context, order Order) (Receipt, error) {
        gateway := NewStripeGateway()
-       ...
+       return gateway.Charge(ctx, order)
    }
    ```
 
@@ -85,11 +99,13 @@ Good interfaces make testing natural:
 
    ```go
    // Testable
-   func CalculateDiscount(cart Cart) (Discount, error) { ... }
+   func CalculateDiscount(cart Cart) Discount {
+       return Discount{Amount: discountAmount(cart)}
+   }
 
    // Hard to test
    func ApplyDiscount(cart *Cart) {
-       cart.Total -= discount
+       cart.Total -= discountAmount(*cart)
    }
    ```
 

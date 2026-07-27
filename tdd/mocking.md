@@ -9,13 +9,13 @@ Mock at **system boundaries** only:
 
 Don't mock:
 
-- Your own classes/modules
+- Your own types/packages
 - Internal collaborators
 - Anything you control
 
 ## Designing for Mockability
 
-At system boundaries, design interfaces that are easy to mock:
+At system boundaries, define small interfaces from the consumer's point of view. Production clients satisfy those interfaces; tests can replace only the external boundary.
 
 **1. Use dependency injection**
 
@@ -23,14 +23,18 @@ Pass external dependencies in rather than creating them internally:
 
 ```go
 // Easy to mock
-func ProcessPayment(order Order, paymentClient PaymentClient) (Receipt, error) {
-    return paymentClient.Charge(order.Total)
+type PaymentClient interface {
+    Charge(ctx context.Context, amount int) (Receipt, error)
+}
+
+func ProcessPayment(ctx context.Context, order Order, paymentClient PaymentClient) (Receipt, error) {
+    return paymentClient.Charge(ctx, order.Total)
 }
 
 // Hard to mock
-func ProcessPayment(order Order) (Receipt, error) {
+func ProcessPaymentWithStripe(ctx context.Context, order Order) (Receipt, error) {
     client := NewStripeClient(os.Getenv("STRIPE_KEY"))
-    return client.Charge(order.Total)
+    return client.Charge(ctx, order.Total)
 }
 ```
 
@@ -40,16 +44,36 @@ Create specific functions for each external operation instead of one generic fun
 
 ```go
 // GOOD: Each method is independently mockable
-type API struct{}
+type StoreAPI interface {
+    GetUser(ctx context.Context, id string) (*User, error)
+    GetOrders(ctx context.Context, userID string) ([]Order, error)
+    CreateOrder(ctx context.Context, data OrderData) (*Order, error)
+}
 
-func (API) GetUser(ctx context.Context, id string) (*User, error)    { ... }
-func (API) GetOrders(ctx context.Context, userID string) ([]Order, error) { ... }
-func (API) CreateOrder(ctx context.Context, data OrderData) (*Order, error) { ... }
+type HTTPStoreAPI struct {
+    baseURL string
+    client  *http.Client
+}
+
+func (api *HTTPStoreAPI) GetUser(ctx context.Context, id string) (*User, error) {
+    // Call GET /users/{id}.
+    return nil, nil
+}
+
+func (api *HTTPStoreAPI) GetOrders(ctx context.Context, userID string) ([]Order, error) {
+    // Call GET /users/{userID}/orders.
+    return nil, nil
+}
+
+func (api *HTTPStoreAPI) CreateOrder(ctx context.Context, data OrderData) (*Order, error) {
+    // Call POST /orders.
+    return nil, nil
+}
 
 // BAD: Mocking requires conditional logic inside the mock
-type API struct{}
-
-func (API) Fetch(ctx context.Context, endpoint string, options RequestOptions) ([]byte, error) { ... }
+type StoreFetcher interface {
+    Fetch(ctx context.Context, endpoint string, options RequestOptions) ([]byte, error)
+}
 ```
 
 The SDK approach means:
