@@ -1,0 +1,28 @@
+# AI tool session/plan files
+.zcode/
+.claude/
+.aider*
+.cursor/
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env & secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Dependencies (if any JS tooling is added later)
+node_modules/

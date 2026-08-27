@@ -1,21 +1,19 @@
 ---
 name: git-commit
-description: 在个人 feature 分支上安全创建 Git commit、推送远程同名分支，并在开发完成时以远程 main（或明确指定的 base 分支）为基准 rebase 后创建 GitHub PR。用户提到提交代码、commit、推送 feature 分支、完成 feature、同步 main、rebase main、创建 PR 或提交 PR 时使用。仅要求 commit 时不要推送或创建 PR。
+description: Create Git commits on a personal feature branch, push to the same-named remote branch, and — only when the feature is finished — rebase onto the remote base branch (e.g. main) and create a GitHub PR. Use when the user mentions committing code, pushing a feature branch, finishing a feature, syncing/rebasing main, or creating a PR. Commit-only requests must not push or create a PR.
 ---
 
-# Feature Branch Git 工作流
+# Feature Branch Git Workflow
 
-此 skill 适用于：从非默认的个人 feature 分支持续开发、反复 commit 和普通 push；开发完成后才同步远程 `main` 并创建 PR。
+Three operations with separate authorization. Never let one imply the next:
 
-## 操作与授权边界
+- **commit**: local commit only.
+- **commit + push**: commit, then plain push to the same-named remote branch.
+- **finish feature**: fetch and rebase onto the remote base branch; create a PR only on explicit request.
 
-- **commit**：仅创建当前 feature 分支的本地提交。
-- **commit + push**：创建提交后，普通推送到远程同名 feature 分支。
-- **完成 feature / 同步 main / 创建 PR**：在 feature 完成时 fetch 并 rebase 到远程 base 分支；仅在用户明确要求时创建 PR。
+Forbidden at all times: `git push --force`, `git push --force-with-lease`, `git reset --hard`, `git clean`, automatic stash/unstash, automatic unstaging. Stop and report on any unexpected failure.
 
-push 授权不等同于 rebase 或创建 PR 授权；创建 PR 也不等同于可 force push。非预期失败立即停止并报告。禁止：`git push --force`、`git push --force-with-lease`、`git reset --hard`、`git clean`、自动 stash/unstash、自动取消暂存。
-
-## 0. 建立分支角色与安全门禁
+## 0. Branch Roles and Safety Gates
 
 ```bash
 git rev-parse --is-inside-work-tree
@@ -26,25 +24,22 @@ git remote -v
 git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null || true
 ```
 
-定义：
+- `<feature-branch>`: current local branch.
+- `<feature-remote>`: push remote; from upstream if set, else the user-specified remote, else `origin` if it is the only remote.
+- `<feature-ref>`: same-named remote branch (e.g. `origin/feature/login`); exists only after first push.
+- `<base-remote>`: PR target remote; defaults to `<feature-remote>`.
+- `<base-branch>`: user-specified PR base; else the default branch from `<base-remote>/HEAD` after fetch (usually `main`).
+- `<base-ref>`: `<base-remote>/<base-branch>`, e.g. `origin/main`.
 
-- `<feature-branch>`：当前本地分支。
-- `<feature-remote>`：feature 分支的推送远程；优先从 upstream 得出。没有 upstream 时使用用户指定的 remote；未指定且仅有 `origin` 时使用 `origin`。
-- `<feature-ref>`：远程同名 feature 分支，例如 `origin/feature/login`；只在该分支存在时定义。
-- `<base-remote>`：PR 的目标 remote。用户未指定时，默认与 `<feature-remote>` 相同。
-- `<base-branch>`：用户指定的 PR base 分支；未指定时，在 fetch `<base-remote>` 后通过 `<base-remote>/HEAD` 获取默认分支（通常为 `main`）。
-- `<base-ref>`：`<base-remote>/<base-branch>`，例如 `origin/main`。
+Stop when:
 
-门禁：
+- Not in a Git work tree, detached HEAD, or no current branch.
+- Staged content exists at startup: list the paths and wait; do not touch the user's index without explicit authorization.
+- Multiple remotes make `<feature-remote>` or `<base-remote>` ambiguous: ask.
 
-- 不在 Git 仓库、处于 detached HEAD、没有当前分支时停止。
-- 在 `<base-branch>`、默认分支（例如 `main` / `master`）或其他共享保护分支上时，停止；要求用户先创建或切换到个人 feature 分支。不要自动创建或切换分支。
-- 若启动时已有 staged 内容，停止并列出路径。不得自行纳入 commit、取消暂存或重写用户的 index，除非用户明确授权该 staged 内容属于本次提交。
-- 有多个 remote 且无法确定 feature 或 base remote 时，先询问；不能假定所有 remote 都是同一仓库。
+## 1. Commit Scope
 
-## 1. 确定本次提交范围
-
-`<scope>` 是本轮任务中 AI 实际修改且用户允许提交的**具体文件路径集合**。不能因文件出现在工作区就自动纳入。
+Commit only the paths this task actually changed and the user approved — that set is `<scope>`. A file being dirty in the worktree is not approval.
 
 ```bash
 git status --short
@@ -52,80 +47,84 @@ git diff --name-only
 git ls-files --others --exclude-standard
 ```
 
-- 若有 `<scope>` 外的已修改、删除或未跟踪文件，停止并报告；由用户决定扩大范围或保留其未提交。
-- 若同一文件混入无法安全分离的本任务外修改，停止并询问；不要猜测性使用交互式暂存。
-- 用户明确要求提交工作区全部改动，且启动时 staged 区为空时，才可将全部当前改动作为 `<scope>`。
-- 仅暂存明确路径：
+Stop and report when:
+
+- Dirty or untracked files exist outside `<scope>` — the user decides whether to widen scope or leave them.
+- One file mixes in-task and out-of-task changes that cannot be staged separately — do not guess with interactive staging.
+
+Exception: if the user explicitly asks to commit all worktree changes and the index was empty at startup, `<scope>` is all current changes.
+
+Stage explicit paths only — never `git add -A`, `git add .`, or path-less `git add`:
 
 ```bash
-git add -- <scope 中的具体文件路径>
+git add -- <specific paths in scope>
 git diff --cached --name-only
 git diff --cached --stat
 git diff --cached --check
 git diff --cached
 ```
 
-- 禁止 `git add -A`、`git add .` 及未带路径的 `git add`。
-- 暂存后新增的文件必须都属于 `<scope>`；不符时停止报告，绝不自动 unstage。
-- `git diff --cached --quiet` 表示没有新增内容：不创建 commit；若未要求 push，报告“无新变更”并结束。
-- `git diff --cached --check` 失败时停止；不得 commit、push 或创建 PR。
+Then:
 
-### 敏感信息门禁
+- Newly staged content must all be inside `<scope>`; otherwise stop and report — never auto-unstage.
+- `git diff --cached --quiet` → nothing to commit. Report "no new changes" and end (unless push was requested).
+- `git diff --cached --check` fails → stop; no commit, push, or PR.
 
-审查 staged 文件名和完整 staged diff。发现 `.env`、私钥/证书、密钥文件、token、密码或生产凭据等疑似敏感信息时停止，并只报告路径和原因，不回显敏感值。
+### Sensitive Data Gate
 
-- 项目已有 `gitleaks`、`detect-secrets`、pre-commit 或同类检查时，优先按现有方式执行。
-- 无扫描器时人工检查常见私钥头、访问令牌和硬编码密码；无法判断时停止询问。
+Scan staged file names and the full staged diff. On suspected secrets — `.env`, private keys/certificates, tokens, passwords, production credentials — stop; report paths and reasons only, never the values.
 
-## 2. 验证并创建本地 commit
+- If the project has `gitleaks`, `detect-secrets`, pre-commit, or similar, run it.
+- Otherwise manually check for private-key headers, access tokens, hardcoded passwords. Unsure → stop and ask.
 
-运行用户指定的验证命令。未指定时，查看项目已有脚本、CI 配置或贡献文档，选择与变更最相关且成本合理的 lint、typecheck、test 或 build。
+## 2. Verify and Commit
 
-- 验证失败时停止并报告；不得 commit、push 或创建 PR。
-- 没有可用项目检查时，记录“未发现项目验证命令”；`git diff --cached --check` 仍为最低必做检查。
-- 基于最终 `git diff --cached` 实际内容生成 Conventional Commit message：`<type>: <摘要>`；type 仅限 `feat / fix / docs / style / refactor / perf / test / chore / build / ci`，摘要单行、不超过 50 个字符、不加句号。
+Run the user's verification command if given. Otherwise pick the most relevant cheap check from project scripts or CI config (lint, typecheck, test, build). If none exists, note it; `git diff --cached --check` is the mandatory minimum.
+
+Verification fails → stop and report; no commit, push, or PR.
+
+Build a Conventional Commit message from the final staged diff: `<type>: <summary>` where type is one of `feat / fix / docs / style / refactor / perf / test / chore / build / ci`; summary is one line, ≤50 chars, no trailing period.
 
 ```bash
 git commit -m "<message>"
 git rev-parse --short HEAD
 ```
 
-记录 `<commit-hash>` 与 `<commit-message>`。commit 失败时停止。
+Record `<commit-hash>` and `<commit-message>`. Stop if commit fails.
 
-## 3. 日常推送 feature 分支
+## 3. Push Feature Branch
 
-仅当用户要求 push 时执行。日常迭代的目标是远程同名 feature 分支，**不在每次 push 前 rebase `main`**。
+Run only when the user asks to push. Target is the same-named remote branch; do **not** rebase `main` first.
 
 ```bash
 git fetch <feature-remote> --prune
 git show-ref --verify --quiet refs/remotes/<feature-remote>/<feature-branch>
 ```
 
-- 若同名远程分支存在，设 `<feature-ref>`，并检查：
+If `<feature-ref>` exists, inspect what would be pushed:
 
 ```bash
 git log --oneline <feature-ref>..HEAD
 git diff --name-status <feature-ref>..HEAD
 ```
 
-- 待推送提交必须属于当前 feature 的已授权历史；存在无关本地提交或文件时停止，绝不顺带 push。
-- 若不存在 `<feature-ref>`，这是首次推送。确认本地历史均属于当前 feature 后使用：
+Every outgoing commit must belong to this feature's authorized history. Unrelated local commits or files → stop; never push them along.
+
+Push:
 
 ```bash
+# first push (no <feature-ref>)
 git push -u <feature-remote> <feature-branch>
-```
 
-- 若 `<feature-ref>` 存在，使用普通 push：
-
-```bash
+# subsequent pushes
 git push <feature-remote> <feature-branch>
 ```
 
-- 若普通 push 被 non-fast-forward 拒绝，fetch 后重新检查 feature 分支范围；不要自动 rebase、merge 或 force push。停止并让用户决定后续同步策略。
+Non-fast-forward rejection → fetch and re-check scope, then stop. No auto-rebase, merge, or force push; the user picks the sync strategy.
 
-## 4. 完成 feature 后同步远程 main
+## 4. Rebase onto Base After Finishing
 
-只有用户明确表示 feature 已完成、要求“同步/rebase main”，或要求创建 PR 时才执行本节。日常 commit/push 不执行本节。
+Run only when the user says the feature is finished, asks to sync/rebase main, or asks for a PR. Never during routine commit/push.
 
 ```bash
 git fetch <base-remote> --prune
@@ -135,66 +134,71 @@ git status --short
 git rebase <base-ref>
 ```
 
-- 用户未指定 `<base-branch>` 时，从 `<base-remote>/HEAD` 得到默认分支；无法获得时停止询问，不能武断使用 `main`。
-- rebase 前工作区必须干净，且没有进行中的 merge/rebase/cherry-pick；否则停止。
-- `<base-ref>` 是唯一的 rebase 基准，通常为 `origin/main`；**绝不 rebase 到远程 feature 分支 `<feature-ref>`。**
-- rebase 发生任何冲突时，停止并报告冲突路径和 Git 状态。不要自动编辑冲突、`rebase --continue`、`rebase --abort` 或创建额外 commit；用户需要解决时移交 `resolving-merge-conflicts` skill。
-- rebase 成功后重新运行项目验证，并检查 feature 相对 base 的历史和 diff：
+Rules:
+
+- `<base-branch>` unresolved from `<base-remote>/HEAD` → stop and ask; do not assume `main`.
+- Dirty worktree or merge/rebase/cherry-pick in progress → stop.
+- Rebase only onto `<base-ref>` — never onto `<feature-ref>`.
+- Any conflict → stop and report conflicted paths and status. Do not edit conflicts, run `rebase --continue`/`--abort`, or add commits. Hand off to the `resolving-merge-conflicts` skill if the user wants resolution.
+
+After a clean rebase, re-run verification (Section 2) and inspect:
 
 ```bash
 git log --oneline <base-ref>..HEAD
 git diff --name-status <base-ref>..HEAD
 ```
 
-- 如果本次 rebase 改写了已推送 feature 分支的历史，普通 push 将被拒绝。由于本 skill 禁止 force push，**停止且不要创建 PR**，报告需由用户另行选择：明确授权受保护的 `git push --force-with-lease`、改用 merge `<base-ref>`，或自行处理历史。不得自行选择其中任一方式。
-- 若 feature 尚未推送，或 rebase 后仍能安全进行普通 fast-forward push，则按第 3 节推送 feature 分支。
+Then:
 
-## 5. 创建或确认 GitHub PR
+- If the branch was already pushed and the rebase rewrote its history, plain push will fail and force push is forbidden → **stop, no PR**. Report the user's options: explicitly authorize a guarded `git push --force-with-lease`, merge `<base-ref>` instead, or handle it themselves. Never choose for them.
+- Otherwise push per Section 3.
 
-仅当用户明确要求创建 PR，且 feature 已包含最终 rebase 结果并已成功推送时执行。PR 的 head 是 `<feature-branch>`，base 是 `<base-branch>`；普通 push 不创建 PR。
+## 5. Create or Confirm the GitHub PR
 
-先检查是否已有同一 head/base 的开放 PR：
+Run only on explicit PR request, after the final rebase result is pushed. Head = `<feature-branch>`, base = `<base-branch>`.
+
+Check for an existing open PR first:
 
 ```bash
 gh pr list --head <feature-branch> --base <base-branch> --state open --json number,url,headRefName,baseRefName
 ```
 
-- 已有 PR 时，验证 `headRefName` 与 `baseRefName`，报告 URL 和编号；不要重复创建。
-- 没有 PR 时，使用实际 commit 信息自动填充标题和正文：
+- Exists → verify `headRefName`/`baseRefName`, report URL and number; do not duplicate.
+- Missing → create with title/body auto-filled from commits:
 
 ```bash
 gh pr create --base <base-branch> --head <feature-branch> --fill
 ```
 
-- 创建后读取 PR 的 number、URL、head 和 base 并核验目标。若 GitHub CLI 未认证、仓库非 GitHub 或创建失败，停止并报告；不要改用网页自动化或其他 provider。
+Verify the created PR's number, URL, head, and base. `gh` unauthenticated, non-GitHub repo, or creation failure → stop and report; never fall back to browser automation or another provider.
 
-## 6. 输出报告
+## 6. Report
 
-按实际结果输出，不能将本地 commit、feature push、同步 main 和 PR 创建混为一谈：
+Report what actually happened; never conflate commit, push, rebase, and PR:
 
 ```markdown
-## Feature 提交报告
+## Feature Commit Report
 
-**Feature 分支**: <feature-branch>
-**Feature 远程**: <feature-remote>/<feature-branch> / 未请求推送
-**PR 基准**: <base-ref> / 未执行最终同步
-**本次提交**: <commit-hash> <commit-message> / 无新增提交
+**Feature branch**: <feature-branch>
+**Feature remote**: <feature-remote>/<feature-branch> / push not requested
+**PR base**: <base-ref> / final sync not performed
+**This commit**: <commit-hash> <commit-message> / no new commit
 
-### 变更与验证
-- <n> 个文件变更，+x / -y 行
-- <命令>: 通过 / 未运行（原因）
+### Changes & Verification
+- <n> files changed, +x / -y lines
+- <command>: passed / not run (reason)
 
-### 同步状态
-- 日常迭代，未 rebase main / 已 rebase <base-ref> / rebase 冲突中止
+### Sync Status
+- Routine iteration, no rebase / rebased onto <base-ref> / rebase stopped on conflict
 
-### PR 状态
-- 未请求 / 已存在：#<number> <url> / 已创建：#<number> <url>
+### PR Status
+- Not requested / existing: #<number> <url> / created: #<number> <url>
 
-### 最终状态
-- ✅ 已提交并推送 feature 分支
-- ✅ 已同步 main、推送 feature 分支并创建/更新 PR
-- ⚠️ 已创建本地提交，尚未推送（原因）
-- ⚠️ rebase 后需要用户决定历史同步方式，未推送且未创建 PR
-- ❌ 验证失败，未提交
-- ⚠️ 冲突或远程同步中止（附下一步建议）
+### Final Status
+- ✅ Committed and pushed feature branch
+- ✅ Synced main, pushed, PR created/updated
+- ⚠️ Committed locally, not pushed (reason)
+- ⚠️ Rebase rewrote pushed history — awaiting user's sync decision; not pushed, no PR
+- ❌ Verification failed, nothing committed
+- ⚠️ Conflict or sync aborted (next-step suggestion)
 ```
