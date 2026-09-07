@@ -1,0 +1,12 @@
+{
+  "theme": "dark",
+  "defaultThinkingLevel": "xhigh",
+  "hideThinkingBlock": false,
+  "packages": [
+    "npm:@upstash/context7-pi",
+    "npm:pi-mcp-adapter",
+    "npm:@tintinweb/pi-subagents",
+    "npm:pi-web-access",
+    "npm:@narumitw/pi-btw"
+  ]
+}
