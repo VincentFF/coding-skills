@@ -90,7 +90,7 @@ repo 中还有 markdown-check（work）当前未链接。
 
 ## 4. 安装 extensions（pi packages）
 
-Extensions 以 pi package 形式安装，记录在 `~/.pi/agent/settings.json` 的 `packages` 字段。当前安装的 5 个：
+Extensions 以 pi package 形式安装，记录在 `~/.pi/agent/settings.json` 的 `packages` 字段。当前安装的 6 个：
 
 | Package | 提供的能力 |
 |---------|-----------|
@@ -99,6 +99,7 @@ Extensions 以 pi package 形式安装，记录在 `~/.pi/agent/settings.json` �
 | `npm:@tintinweb/pi-subagents` | 子 agent / workflow 编排 |
 | `npm:pi-web-access` | Web 搜索与内容抓取 |
 | `npm:@narumitw/pi-btw` | 附加工具集 |
+| `npm:context-mode` | 大输出沙箱处理（ctx_execute / ctx_execute_file）、FTS5 知识库与会话续接 |
 
 安装：
 
