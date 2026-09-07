@@ -41,7 +41,9 @@ fi
 
 ## 3. 创建软链
 
-pi 从 `~/.agents/skills/` 和 `~/.pi/agent/skills/` 发现 skills，全局指令读 `~/.pi/agent/AGENTS.md`。因此每个在用的 skill 建两层软链（repo → `~/.agents/skills/` → `~/.pi/agent/skills/`），外加一条 AGENTS.md 软链：
+pi 从 `~/.agents/skills/` 和 `~/.pi/agent/skills/` 发现 skills，全局指令读 `~/.pi/agent/AGENTS.md`。因此每个在用的 skill 建两层软链（repo → `~/.agents/skills/` → `~/.pi/agent/skills/`），外加一条 AGENTS.md 软链。
+
+> **注意**：`pi install`（第 4 节）会清空 `~/.pi/agent/skills/` 再同步 package skills。因此在干净机器上应按 4 → 3 的顺序执行；或按本文顺序执行后，**在第 4 节装完 extensions 再重跑一次本节的软链循环**（幂等）。日常新增 skill 软链不受影响，但凡是跑过 `pi install` / `pi update --extensions` 之后，都检查一次 `ls ~/.pi/agent/skills/`。
 
 ```bash
 REPO=~/.config/coding-skills
@@ -81,11 +83,13 @@ pi install npm:context-mode              # 大输出沙箱处理、FTS5 知识�
 
 pi package 只提供 context-mode 的会话内工具，完整能力还需：
 
-1. **npm 全局安装**——提供 MCP server 二进制与 CLI：
+1. **npm 全局安装**——提供 MCP server 二进制与 CLI。npm ≥11 默认阻止 install scripts，必须显式放行，否则 better-sqlite3 原生模块不编译、装出来是残的：
 
    ```bash
-   npm install -g context-mode
+   npm install -g --allow-scripts=context-mode,better-sqlite3 context-mode
    ```
+
+   想永久放行可执行 `npm config set allow-scripts=context-mode,better-sqlite3 --location=user`，之后普通 `npm install -g context-mode` 即可。
 
 2. **配置 MCP**——写入 `~/.agents/mcp.json`。该文件只保留这一个通用 server；机器特有的 server（如 mcp-atlassian）按需自行追加：
 
@@ -99,11 +103,44 @@ pi package 只提供 context-mode 的会话内工具，完整能力还需：
 
 ## 5. 安装 pi-web（系统守护）
 
-pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux → systemd，macOS → launchd），随机器启动，端口固定 **10803**。安装步骤以官方 README 为准：
+pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux → systemd，macOS → launchd），随机器启动，端口固定 **10803**。
 
-1. 抓取 <https://github.com/agegr/pi-web> 的 README，按其当前文档安装最新版并配置为系统守护（macOS 上官方若推荐 `brew services` 亦可）。
-2. 端口配置为 10803，启动服务。
-3. 验证 `curl http://127.0.0.1:10803/` 有响应。
+注意：上游 README 只介绍前台运行（`npx @agegr/pi-web@latest` / `pi-web`），**没有** systemd/launchd 章节，守护化需自行配置。步骤如下（以 Linux systemd user service 为例，Node ≥ 22.19）：
+
+1. 全局安装并确认参数：
+
+   ```bash
+   npm install -g @agegr/pi-web@latest
+   pi-web --help    # 确认 --port / --no-open 等选项
+   ```
+
+2. 写 systemd user unit `~/.config/systemd/user/pi-web.service`（`pi-web` 在 nvm 下，路径按 `command -v pi-web` 实际值填）：
+
+   ```ini
+   [Unit]
+   Description=Pi Web - browser UI for the pi coding agent
+   After=network.target
+
+   [Service]
+   ExecStart=%h/.nvm/versions/node/v24.20.0/bin/pi-web --port 10803 --no-open
+   Restart=on-failure
+   RestartSec=3
+
+   [Install]
+   WantedBy=default.target
+   ```
+
+3. 启动并设置开机自启（user service 需 linger 才能在未登录时自启）：
+
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user enable --now pi-web
+   loginctl enable-linger "$USER"
+   ```
+
+4. 验证 `curl http://127.0.0.1:10803/` 有响应。
+
+它是 **user service**，查询/管理都要带 `--user`：`systemctl --user status pi-web`、`journalctl --user -u pi-web -f`。macOS 上没有 systemd，可改用 launchd 的 `~/Library/LaunchAgents/agegr.pi-web.plist` 达到同样效果（字段对应：ProgramArguments 填 `pi-web --port 10803 --no-open`，KeepAlive=true，RunAtLoad=true）。
 
 pi 侧的 web 访问配置由各机器自行处理，不在本指引同步范围。
 
@@ -150,6 +187,8 @@ jq '{theme, defaultThinkingLevel, hideThinkingBlock, packages}' \
   && diff /tmp/pi-settings-live.json "$SKILL/settings.shared.json" \
   && echo settings OK
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:10803/   # pi-web 有响应
+systemctl --user is-active pi-web           # user service 状态（注意带 --user）
+loginctl show-user "$USER" -p Linger        # 应为 Linger=yes（开机自启前提）
 ```
 
 启动 `pi` 后输入 `/reload`，skills 会出现在系统提示的 available skills 列表中。
