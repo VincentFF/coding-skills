@@ -1,12 +1,12 @@
 ---
 name: pi-installation
-description: 在干净的 macOS / Linux 机器上安装或修复 pi coding agent 全套环境：CLI、coding-skills repo、常用 skills 软链、extensions、共享 settings、以及以 systemd/launchd 守护运行的 pi-web。幂等，可重复执行。
+description: 在干净的 macOS / Linux 机器上安装或修复 pi coding agent 全套环境：CLI、skills 软链、extensions、共享 settings、pi-web 系统守护。
 disable-model-invocation: true
 ---
 
 # Pi Agent 安装指引（macOS / Linux）
 
-在一台干净的 macOS 或 Linux 机器上安装 pi coding agent、extensions、skills、prompts、共享配置和 pi-web。全程幂等，可重复执行。共享配置（`settings.shared.json`）作为本 skill 的文件随 repo 同步，Linux 与 macOS 桌面保持同一套；各机器的模型、MCP、凭据等本地配置不随 repo 走。
+在一台干净的 macOS 或 Linux 机器上安装 pi coding agent 全套环境，全程幂等，可重复执行。共享配置（`settings.shared.json`）随本 repo 同步，各桌面保持同一套；模型、凭据、机器特有的 MCP server 等本地配置不随 repo 走。
 
 ## 前置条件
 
@@ -29,7 +29,7 @@ pi --version   # 验证
 
 ## 2. Clone coding-skills repo
 
-Repo 统一放在 `~/.config/coding-skills`，默认使用 SSH 协议地址。本 skill 就在 repo 内，以下 `$SKILL` 指 `~/.config/coding-skills/common/pi-installation`。
+Repo 统一放在 `~/.config/coding-skills`（本 skill 即在其中），使用 SSH 协议地址。下文 `$SKILL` 指 `~/.config/coding-skills/common/pi-installation`。
 
 ```bash
 if [ -d ~/.config/coding-skills/.git ]; then
@@ -41,25 +41,17 @@ fi
 
 ## 3. 创建软链
 
-目录结构：repo 按 `coding/`、`common/`、`work/` 分组存放 skills，`prompts/` 存放全局 AGENTS.md。pi 从 `~/.pi/agent/skills/` 和 `~/.agents/skills/` 两个位置发现 skills，全局上下文文件读 `~/.pi/agent/AGENTS.md`。因此创建两层软链：
-
-1. `~/.pi/agent/AGENTS.md` → repo 的 `prompts/AGENTS.md`（全局指令）
-2. repo 中在用的 skill → `~/.agents/skills/<skill名>`
-3. `~/.pi/agent/skills/<skill名>` → `~/.agents/skills/<skill名>`
-
-只链接下面 `SKILLS` 列表中的常用 skill，repo 里其余 skill（如 markdown-check）不链接。要启用某个时，把名字加进列表再重跑本节。
+pi 从 `~/.agents/skills/` 和 `~/.pi/agent/skills/` 发现 skills，全局指令读 `~/.pi/agent/AGENTS.md`。因此每个在用的 skill 建两层软链（repo → `~/.agents/skills/` → `~/.pi/agent/skills/`），外加一条 AGENTS.md 软链：
 
 ```bash
 REPO=~/.config/coding-skills
 SKILLS="code-review codebase-design confluence-pages diagnosing-bugs \
 doc-writing domain-modeling git-commit grill-me grill-with-docs \
-grilling pi-installation research writing-great-skills"
+grilling research writing-great-skills"
 mkdir -p ~/.agents/skills ~/.pi/agent/skills
 
-# 3.1 全局 AGENTS.md
 ln -sfn "$REPO/prompts/AGENTS.md" ~/.pi/agent/AGENTS.md
 
-# 3.2 + 3.3 列表内每个 skill 建两层软链
 for name in $SKILLS; do
   src=$(find "$REPO" -mindepth 2 -maxdepth 2 -type d -name "$name" | head -1)
   [ -n "$src" ] || { echo "skill not found in repo: $name" >&2; continue; }
@@ -68,67 +60,56 @@ for name in $SKILLS; do
 done
 ```
 
-`SKILLS` 列表当前包含 13 个在用的 skill：
-
-| Skill | 分组 | 用途 |
-|-------|------|------|
-| code-review | coding | 按 Standards / Spec 两轴审查改动 |
-| codebase-design | coding | 深度模块设计词汇表 |
-| diagnosing-bugs | coding | 定位 bug 的系统性流程 |
-| domain-modeling | coding | 领域建模 |
-| git-commit | coding | 自动/手动 commit 规范 |
-| grill-me | coding | 对计划进行压力测试 |
-| grill-with-docs | coding | 结合文档的压力测试 |
-| grilling | coding | 追问式质询 |
-| research | coding | 调研并产出 Markdown 结论 |
-| writing-great-skills | coding | 编写 skill 的规范 |
-| doc-writing | common | 技术文档写作规范 |
-| confluence-pages | work | Confluence 页面操作 |
-| pi-installation | common | 本安装指引 |
-
-repo 中还有 markdown-check（work）当前未链接。
+`SKILLS` 只列在用的 skill；要启用 repo 里的其他 skill（如 markdown-check），把名字加进列表重跑本节。pi-installation 自身不入列表：它是 bootstrap 指引，新机器上直接从 repo 路径阅读执行，无需软链。
 
 ## 4. 安装 extensions（pi packages）
 
-Extensions 以 pi package 形式安装，记录在 `~/.pi/agent/settings.json` 的 `packages` 字段。当前安装的 6 个：
-
-| Package | 提供的能力 |
-|---------|-----------|
-| `npm:@upstash/context7-pi` | Context7 文档查询工具 |
-| `npm:pi-mcp-adapter` | 接入 MCP server |
-| `npm:@tintinweb/pi-subagents` | 子 agent / workflow 编排 |
-| `npm:pi-web-access` | Web 搜索与内容抓取 |
-| `npm:@narumitw/pi-btw` | 附加工具集 |
-| `npm:context-mode` | 大输出沙箱处理（ctx_execute / ctx_execute_file）、FTS5 知识库与会话续接 |
-
-安装：
+Extensions 以 pi package 形式安装，记录在 `~/.pi/agent/settings.json` 的 `packages` 字段：
 
 ```bash
-pi install npm:@upstash/context7-pi
-pi install npm:pi-mcp-adapter
-pi install npm:@tintinweb/pi-subagents
-pi install npm:pi-web-access
-pi install npm:@narumitw/pi-btw
+pi install npm:@upstash/context7-pi      # Context7 文档查询
+pi install npm:pi-mcp-adapter            # 接入 MCP server
+pi install npm:@tintinweb/pi-subagents   # 子 agent / workflow 编排
+pi install npm:pi-web-access             # Web 搜索与内容抓取
+pi install npm:@narumitw/pi-btw          # 附加工具集
+pi install npm:context-mode              # 大输出沙箱处理、FTS5 知识库与会话续接
 ```
 
-或直接向 `~/.pi/agent/settings.json` 写入 `"packages"` 数组后执行 `pi update --extensions`，pi 会自动安装缺失的 package。
+也可跳过逐条安装：第 6 节的 settings 合并已带上 `packages` 列表，合并后执行 `pi update --extensions` 会补齐缺失的 package。
+
+### context-mode：额外的两步
+
+pi package 只提供 context-mode 的会话内工具，完整能力还需：
+
+1. **npm 全局安装**——提供 MCP server 二进制与 CLI：
+
+   ```bash
+   npm install -g context-mode
+   ```
+
+2. **配置 MCP**——写入 `~/.agents/mcp.json`。该文件只保留这一个通用 server；机器特有的 server（如 mcp-atlassian）按需自行追加：
+
+   ```json
+   {
+     "mcpServers": {
+       "context-mode": { "command": "context-mode" }
+     }
+   }
+   ```
 
 ## 5. 安装 pi-web（系统守护）
 
-pi-web（<https://github.com/agegr/pi-web>）必须以系统守护方式安装运行：Linux 用 systemd，macOS 用 launchd，随机器启动，不依赖登录会话。端口固定 **10803**。
+pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux → systemd，macOS → launchd），随机器启动，端口固定 **10803**。安装步骤以官方 README 为准：
 
-执行本节时**先获取官方 README 的安装文档并遵循其最新步骤**，不要凭记忆执行可能过期的命令：
+1. 抓取 <https://github.com/agegr/pi-web> 的 README，按其当前文档安装最新版并配置为系统守护（macOS 上官方若推荐 `brew services` 亦可）。
+2. 端口配置为 10803，启动服务。
+3. 验证 `curl http://127.0.0.1:10803/` 有响应。
 
-1. 抓取 <https://github.com/agegr/pi-web> 的 README，按其当前文档安装最新版。
-2. 守护方式按官方文档：Linux → systemd unit（`systemctl` 管理）；macOS → launchd（官方若推荐 `brew services` 亦可）。
-3. 端口配置为 10803。
-4. 启动并验证服务运行中，且 `curl http://127.0.0.1:10803/` 有响应。
-
-pi-web 装好后，pi 侧的 web 访问配置（如需写入 `~/.agents/mcp.json` 或 settings）由各机器自行处理，不属于本指引的同步范围。
+pi 侧的 web 访问配置由各机器自行处理，不在本指引同步范围。
 
 ## 6. 同步共享配置
 
-skill 目录下的 `settings.shared.json` 是要在两台桌面保持一致的部分：
+skill 目录下的 `settings.shared.json` 是要在各桌面保持一致的部分：
 
 | 键 | 内容 |
 |----|------|
@@ -144,7 +125,7 @@ jq -s '.[0] + (.[1] | {theme, defaultThinkingLevel, hideThinkingBlock, packages}
   && mv /tmp/pi-settings.json ~/.pi/agent/settings.json
 ```
 
-要改共享配置时，编辑 `settings.shared.json`、commit、push，在另一台机器上 `git pull` 后重跑本节。
+改共享配置时，编辑 `settings.shared.json`、commit、push，在另一台机器上 `git pull` 后重跑本节。
 
 不同步的例外（各机器自行配置）：
 
@@ -152,7 +133,7 @@ jq -s '.[0] + (.[1] | {theme, defaultThinkingLevel, hideThinkingBlock, packages}
 |------|------|------|
 | 模型与 provider | `~/.pi/agent/settings.json` 的 `defaultProvider` / `defaultModel` / `enabledModels` | 各机器可能不同，由合并逻辑保留 |
 | 登录凭据 | `~/.pi/agent/auth.json` | 每台机器用 `/login` 重新登录 |
-| MCP server | `~/.agents/mcp.json` | 各机器安装的 MCP 不同，自行配置 |
+| MCP server | `~/.agents/mcp.json` | 通用项只有 context-mode（见第 4 节）；其余 server 各机器自行追加 |
 | 其他来源的 skills | `~/.agents/skills/` 下的实体目录 | `find-skills`、`gitops-*` 来自 fluxcd/agent-skills 等外部仓库，需要时单独安装 |
 
 ## 7. 验证
@@ -162,6 +143,8 @@ pi list                    # 列出已安装的 package
 ls -la ~/.pi/agent/skills  # 每个 skill 应为指向 ~/.agents/skills 的软链
 ls -la ~/.agents/skills    # 每个 skill 应为指向 repo 的软链
 ls -la ~/.pi/agent/AGENTS.md
+command -v context-mode                          # 全局二进制存在
+jq -e '.mcpServers["context-mode"]' ~/.agents/mcp.json   # MCP 已配置
 jq '{theme, defaultThinkingLevel, hideThinkingBlock, packages}' \
   ~/.pi/agent/settings.json > /tmp/pi-settings-live.json \
   && diff /tmp/pi-settings-live.json "$SKILL/settings.shared.json" \
