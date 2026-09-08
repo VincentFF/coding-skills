@@ -13,6 +13,9 @@
 - Mention assumptions, risks, alternatives, and follow-up work only when they
   materially affect the answer or decision.
 - Answer direct questions before editing files or running implementation commands.
+- When the user explicitly asks a question or starts a discussion, answer and
+  discuss it directly; do not write or modify files unless they explicitly
+  request a change.
 - When user feedback affects the next action, state agreement or disagreement
   clearly before describing the change.
 - Apply this style to documentation as well: include the context, rationale,
