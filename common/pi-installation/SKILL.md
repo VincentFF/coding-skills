@@ -74,6 +74,7 @@ pi install npm:pi-mcp-adapter            # 接入 MCP server
 pi install npm:@tintinweb/pi-subagents   # 子 agent / workflow 编排
 pi install npm:pi-web-access             # Web 搜索与内容抓取
 pi install npm:@narumitw/pi-btw          # 附加工具集
+pi install npm:@janvitos/pi-plan-build   # Plan / Build 工作流、显式审批与实现交接
 pi install npm:context-mode              # 大输出沙箱处理、FTS5 知识库与会话续接
 ```
 

@@ -8,6 +8,7 @@
     "npm:@tintinweb/pi-subagents",
     "npm:pi-web-access",
     "npm:@narumitw/pi-btw",
+    "npm:@janvitos/pi-plan-build",
     "npm:context-mode"
   ]
 }
