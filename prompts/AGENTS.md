@@ -18,9 +18,15 @@
   and examples the reader needs to act; omit background the reader does not
   need.
 
-## Preferred local tooling
+## Tool selection
 
-- Use `rg` for repository text search and `fd` or `rg --files` for file discovery.
-  Do not use recursive `grep` or `find` for ad-hoc repository exploration.
-- Use `jq` for JSON and `yq` v4 for YAML queries or transformations. Do not
-  parse structured data with `grep` or `sed`.
+- Default to the built-in file tools, when available (`read`, `write`,
+  `edit`, `grep`, `find`, `ls` or their equivalents) for reading, writing,
+  and searching files. Do not use shell commands like `cat`, `grep`, or
+  `find` for tasks the built-in tools can handle.
+- Use bash only for what the built-in tools cannot do: running builds,
+  tests, git, pipelines, and data processing. In shell commands:
+  - Search text with `rg`; locate files with `fd` (named `fdfind` on
+    Debian/Ubuntu) or `rg --files`. Avoid recursive `grep -r` and `find`.
+  - Process JSON with `jq` and YAML with `yq` v4 instead of parsing with
+    `grep`/`sed`. If a preferred tool is unavailable, fall back and note it.
