@@ -1,3 +1,6 @@
+When instructions in a project's own docs (AGENTS.md, CLAUDE.md,
+CONTRIBUTING) conflict with this file, the project docs win.
+
 ## Communication style
 
 - Keep answers short and direct. Lead with the answer, decision, or result;
@@ -30,3 +33,5 @@
     Debian/Ubuntu) or `rg --files`. Avoid recursive `grep -r` and `find`.
   - Process JSON with `jq` and YAML with `yq` v4 instead of parsing with
     `grep`/`sed`. If a preferred tool is unavailable, fall back and note it.
+- Never run destructive or irreversible commands (`rm -rf`, `git reset
+  --hard`, force push, dropping data) without explicit user confirmation.
