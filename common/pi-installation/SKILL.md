@@ -1,42 +1,42 @@
 ---
 name: pi-installation
-description: 在 macOS / Linux 机器上安装、修复并同步 pi coding agent 环境：CLI、skills、extensions、共享 settings、MCP、pi-web。多端重跑本指引可收敛到同一套配置；可共享的部分统一装在 ~/.agents 下，供其它 agent 复用。
+description: Install, repair, and sync the pi coding agent environment on macOS / Linux machines — CLI, skills, extensions, shared settings, MCP servers, pi-web daemon. Re-running this guide on multiple machines converges them to the same configuration. Everything shareable is installed under ~/.agents so other agents can reuse it.
 disable-model-invocation: true
 ---
 
-# Pi 环境安装与同步指引（macOS / Linux）
+# Pi Environment Installation & Sync Guide (macOS / Linux)
 
-两个用途：
+Two purposes:
 
-1. **安装 / 修复**：在干净机器上从零装好 pi 全套环境。
-2. **同步 / 收敛**：已装好的机器重跑本指引，卸载清单外的 extensions / skills / MCP server，补齐缺失项，使多端配置一致。
+1. **Install / repair**: set up the full pi environment from scratch on a clean machine.
+2. **Sync / converge**: re-run this guide on an already-configured machine to uninstall extensions / skills / MCP servers that are not on the managed lists, install missing items, and bring all machines to the same configuration.
 
-全程幂等，可重复执行。共享配置（`settings.shared.json`）随本 repo 同步；模型、凭据、机器特有项等本地配置不随 repo 走（见第 6 节末尾的例外表）。
+Everything is idempotent and safe to re-run. Shared configuration (`settings.shared.json`) travels with this repo; local configuration (models, credentials, machine-specific entries) does not — see the exceptions table at the end of section 6.
 
-**共享层原则**：凡 pi 与其它 agent 能共用的东西，实体都装在 `~/.agents/` 下——skills（`~/.agents/skills/`）、全局指令（`~/.agents/AGENTS.md`）、MCP 配置（`~/.agents/mcp.json`），pi 侧只放软链；pi 专有的（extensions / packages、settings）才留在 `~/.pi/agent/`。其它 agent 把各自的 skills / 指令 / MCP 路径指向 `~/.agents` 下对应文件，即可复用同一套能力。
+**Shared-layer principle**: anything usable by both pi and other agents lives as real files under `~/.agents/` — skills (`~/.agents/skills/`), global instructions (`~/.agents/AGENTS.md`), MCP configuration (`~/.agents/mcp.json`) — with the pi side holding only symlinks. pi-only resources (extensions / packages, settings) stay under `~/.pi/agent/`. Other agents reuse the same capabilities by pointing their skills / instructions / MCP paths at the corresponding files under `~/.agents`.
 
-## 前置条件
+## Prerequisites
 
-| 依赖 | 用途 |
-|------|------|
-| Node.js + npm | pi 是 npm 包，extensions 的安装也依赖 npm |
-| git | clone repo、安装 git 来源的 pi package |
-| GitHub SSH key | repo 与部分 package 使用 SSH 协议，需已配置到 GitHub |
+| Dependency | Purpose |
+|------------|---------|
+| Node.js + npm | pi is an npm package; extension installation also depends on npm |
+| git | clone the repo; install git-sourced pi packages |
+| GitHub SSH key | the repo and some packages use SSH URLs; key must be registered with GitHub |
 
-Windows 不在支持范围内。
+Windows is not supported.
 
-## 1. 安装 pi CLI
+## 1. Install the pi CLI
 
 ```bash
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-pi --version   # 验证
+pi --version   # verify
 ```
 
-也可用 pnpm：`pnpm add -g @earendil-works/pi-coding-agent`。
+pnpm also works: `pnpm add -g @earendil-works/pi-coding-agent`.
 
-## 2. Clone coding-skills repo
+## 2. Clone the coding-skills repo
 
-Repo 统一放在 `~/.config/coding-skills`（本 skill 即在其中），使用 SSH 协议地址。下文 `$SKILL` 指 `~/.config/coding-skills/common/pi-installation`。
+The repo always lives at `~/.config/coding-skills` (this skill is inside it), cloned via its SSH URL. Below, `$SKILL` refers to `~/.config/coding-skills/common/pi-installation`.
 
 ```bash
 if [ -d ~/.config/coding-skills/.git ]; then
@@ -46,13 +46,13 @@ else
 fi
 ```
 
-## 3. 共享层：skills 与 AGENTS.md
+## 3. Shared layer: skills and AGENTS.md
 
-pi 原生从 `~/.agents/skills/` 发现 skills，这一层是跨 agent 公共目录，其它 agent 指向同一目录即可复用，无需另配。全局指令同理：实体放 `~/.agents/AGENTS.md`，pi 侧软链过去。
+pi natively discovers skills from `~/.agents/skills/` — a cross-agent common directory that other agents can point at directly, no extra wiring needed. Same for global instructions: the real file lives at `~/.agents/AGENTS.md`, and the pi side symlinks to it.
 
-采用「实体在 `~/.agents`，pi 侧只放软链」的两层结构（repo → `~/.agents/skills/` → `~/.pi/agent/skills/`；AGENTS.md 同理）：
+So the layout is "real files under `~/.agents`, symlinks on the pi side" (repo → `~/.agents/skills/` → `~/.pi/agent/skills/`; same for AGENTS.md):
 
-> **注意**：`pi install`（第 4 节）会清空 `~/.pi/agent/skills/` 再同步 package skills。因此在干净机器上应按 4 → 3 的顺序执行；或按本文顺序执行后，**在第 4 节装完 extensions 再重跑一次本节的软链循环**（幂等）。日常新增 skill 软链不受影响，但凡是跑过 `pi install` / `pi update --extensions` 之后，都检查一次 `ls ~/.pi/agent/skills/`。
+> **Note**: `pi install` (section 4) wipes `~/.pi/agent/skills/` and re-syncs package skills. On a clean machine, run section 4 before section 3; or, after finishing section 4, **re-run this section's symlink loop** (idempotent). Day-to-day additions of skill symlinks are unaffected, but after every `pi install` / `pi update --extensions`, check `ls ~/.pi/agent/skills/` once.
 
 ```bash
 REPO=~/.config/coding-skills
@@ -72,37 +72,37 @@ for name in $SKILLS; do
 done
 ```
 
-`SKILLS` 只列在用的 skill；要启用 repo 里的其他 skill（如 markdown-check），把名字加进列表重跑本节。pi-installation 自身不入列表：它是 bootstrap 指引，新机器上直接从 repo 路径阅读执行，无需软链。
+`SKILLS` lists only the skills in active use; to enable another skill from the repo (e.g. markdown-check), add its name to the list and re-run this section. pi-installation itself is not in the list: it is a bootstrap guide, read and executed directly from the repo path on new machines, no symlink needed.
 
-## 4. 安装 extensions（pi packages）
+## 4. Install extensions (pi packages)
 
-Extensions 是 pi 专有机制，装在 `~/.pi/agent/` 下，无法共享给其它 agent；可共享的是个别 package 附带的全局 CLI（如 context-mode，见下）。Packages 记录在 `~/.pi/agent/settings.json` 的 `packages` 字段：
+Extensions are a pi-specific mechanism, installed under `~/.pi/agent/`, and cannot be shared with other agents; what IS shareable is the global CLI some packages provide (e.g. context-mode, see below). Packages are recorded in the `packages` field of `~/.pi/agent/settings.json`:
 
 ```bash
-pi install npm:@upstash/context7-pi      # Context7 文档查询
-pi install npm:pi-mcp-adapter            # 接入 MCP server
-pi install npm:@tintinweb/pi-subagents   # 子 agent / workflow 编排
-pi install npm:pi-web-access             # Web 搜索与内容抓取
-pi install npm:@narumitw/pi-btw          # 附加工具集
-pi install npm:@janvitos/pi-plan-build   # Plan / Build 工作流、显式审批与实现交接
-pi install npm:context-mode              # 大输出沙箱处理、FTS5 知识库与会话续接
+pi install npm:@upstash/context7-pi      # Context7 documentation lookup
+pi install npm:pi-mcp-adapter            # MCP server integration
+pi install npm:@tintinweb/pi-subagents   # sub-agent / workflow orchestration
+pi install npm:pi-web-access             # web search and content fetching
+pi install npm:@narumitw/pi-btw          # additional toolset
+pi install npm:@janvitos/pi-plan-build   # Plan / Build workflow, explicit approval and implementation handoff
+pi install npm:context-mode              # large-output sandbox, FTS5 knowledge base, session continuation
 ```
 
-也可跳过逐条安装：第 6 节的 settings 合并已带上 `packages` 列表，合并后执行 6.3 的 `pi update --extensions` 会补齐缺失的 package。
+You can skip the individual installs: the settings merge in section 6 already carries the `packages` list, and running `pi update --extensions` in 6.3 afterwards installs whatever is missing.
 
-### context-mode：额外的两步
+### context-mode: two extra steps
 
-pi package 只提供 context-mode 的会话内工具，完整能力还需：
+The pi package only provides context-mode's in-session tools. Full capability additionally requires:
 
-1. **npm 全局安装**——提供 MCP server 二进制与 CLI，全局二进制对其它 agent 同样可用。npm ≥11 默认阻止 install scripts，必须显式放行，否则 better-sqlite3 原生模块不编译、装出来是残的：
+1. **Global npm install** — provides the MCP server binary and CLI; the global binary is usable by other agents too. npm ≥11 blocks install scripts by default; you must explicitly allow them, otherwise the better-sqlite3 native module never compiles and you get a broken install:
 
    ```bash
    npm install -g --allow-scripts=context-mode,better-sqlite3 context-mode
    ```
 
-   想永久放行可执行 `npm config set allow-scripts=context-mode,better-sqlite3 --location=user`，之后普通 `npm install -g context-mode` 即可。
+   To allow permanently: `npm config set allow-scripts=context-mode,better-sqlite3 --location=user`, after which a plain `npm install -g context-mode` works.
 
-2. **配置 MCP**——写入 `~/.agents/mcp.json`。该文件是共享层的一部分：pi 通过 pi-mcp-adapter 读它，其它 agent 指向同一文件即可。通用 server 只保留这一个；机器特有的 server（如 mcp-atlassian）按需自行追加，并登记进 6.5 的 `MCP_KEEP`：
+2. **Configure MCP** — write to `~/.agents/mcp.json`. This file is part of the shared layer: pi reads it via pi-mcp-adapter, and other agents can point at the same file. Keep only this one common server in it; append machine-specific servers (e.g. mcp-atlassian) as needed and register them in `MCP_KEEP` in 6.5:
 
    ```json
    {
@@ -112,20 +112,20 @@ pi package 只提供 context-mode 的会话内工具，完整能力还需：
    }
    ```
 
-## 5. 安装 pi-web（系统守护）
+## 5. Install pi-web (system daemon)
 
-pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux → systemd，macOS → launchd），随机器启动，端口固定 **10803**。
+pi-web (<https://github.com/agegr/pi-web>) runs as a system daemon (Linux → systemd, macOS → launchd), starts with the machine, fixed port **10803**.
 
-注意：上游 README 只介绍前台运行（`npx @agegr/pi-web@latest` / `pi-web`），**没有** systemd/launchd 章节，守护化需自行配置。步骤如下（以 Linux systemd user service 为例，Node ≥ 22.19）：
+Note: the upstream README only covers foreground runs (`npx @agegr/pi-web@latest` / `pi-web`) and has **no** systemd/launchd section — daemonization is your own job. Steps below (Linux systemd user service example, Node ≥ 22.19):
 
-1. 全局安装并确认参数：
+1. Install globally and confirm the flags:
 
    ```bash
    npm install -g @agegr/pi-web@latest
-   pi-web --help    # 确认 --port / --no-open 等选项
+   pi-web --help    # confirm --port / --no-open etc.
    ```
 
-2. 写 systemd user unit `~/.config/systemd/user/pi-web.service`（`pi-web` 在 nvm 下，路径按 `command -v pi-web` 实际值填）：
+2. Write the systemd user unit `~/.config/systemd/user/pi-web.service` (under nvm, fill in the actual path from `command -v pi-web`):
 
    ```ini
    [Unit]
@@ -141,7 +141,7 @@ pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux
    WantedBy=default.target
    ```
 
-3. 启动并设置开机自启（user service 需 linger 才能在未登录时自启）：
+3. Start it and enable autostart (a user service needs linger to start without login):
 
    ```bash
    systemctl --user daemon-reload
@@ -149,19 +149,19 @@ pi-web（<https://github.com/agegr/pi-web>）以系统守护方式运行（Linux
    loginctl enable-linger "$USER"
    ```
 
-4. 验证 `curl http://127.0.0.1:10803/` 有响应。
+4. Verify `curl http://127.0.0.1:10803/` responds.
 
-它是 **user service**，查询/管理都要带 `--user`：`systemctl --user status pi-web`、`journalctl --user -u pi-web -f`。macOS 上没有 systemd，可改用 launchd 的 `~/Library/LaunchAgents/agegr.pi-web.plist` 达到同样效果（字段对应：ProgramArguments 填 `pi-web --port 10803 --no-open`，KeepAlive=true，RunAtLoad=true）。
+It is a **user service** — all queries and management need `--user`: `systemctl --user status pi-web`, `journalctl --user -u pi-web -f`. macOS has no systemd; use a launchd `~/Library/LaunchAgents/agegr.pi-web.plist` instead (field mapping: ProgramArguments = `pi-web --port 10803 --no-open`, KeepAlive=true, RunAtLoad=true).
 
-pi 侧的 web 访问配置由各机器自行处理，不在本指引同步范围。
+pi-side web access configuration is per-machine and out of scope for this guide.
 
-## 6. 同步共享配置，收敛环境
+## 6. Sync shared configuration and converge the environment
 
-重跑本节即完成多端同步：卸载清单外的 extensions / skills / MCP server，合并共享 settings，补齐缺失项。**按顺序执行**（6.1 必须先于 6.2）。
+Re-running this section IS the multi-machine sync: uninstall off-list extensions / skills / MCP servers, merge the shared settings, install what is missing. **Run in order** (6.1 must come before 6.2).
 
-### 6.1 卸载多余 extensions
+### 6.1 Uninstall extra extensions
 
-期望清单 = `settings.shared.json` 的 `packages`。本机特有的本地路径 package（如 pi-web 注册的 relays）不在其列，自动保留；其余多余的一律用 `pi remove` 卸载。必须先于 6.2 的合并执行——合并会整体覆盖 `packages` 键，之后再删只会留下磁盘残留。
+The expected list is `packages` in `settings.shared.json`. Machine-specific local-path packages (e.g. the relays package registered by pi-web) are auto-detected and preserved; everything else extra is uninstalled with `pi remove`. This must run before the merge in 6.2 — the merge overwrites the whole `packages` key, and deleting afterwards would only leave orphaned files on disk.
 
 ```bash
 SKILL=~/.config/coding-skills/common/pi-installation
@@ -171,16 +171,16 @@ comm -23 \
 | while read -r pkg; do pi remove "$pkg"; done
 ```
 
-### 6.2 合并共享 settings
+### 6.2 Merge shared settings
 
-skill 目录下的 `settings.shared.json` 是要在各桌面保持一致的部分：
+`settings.shared.json` in the skill directory is the part that must stay identical across machines:
 
-| 键 | 内容 |
-|----|------|
-| `theme` / `defaultThinkingLevel` / `hideThinkingBlock` | 界面与思考偏好 |
-| `packages` | extensions 清单（第 4 节） |
+| Key | Content |
+|-----|---------|
+| `theme` / `defaultThinkingLevel` / `hideThinkingBlock` | UI and thinking preferences |
+| `packages` | extensions list (section 4) |
 
-用 `jq` 合并写入——只覆盖共享键，保留机器本地的 `defaultProvider` / `defaultModel` / `enabledModels` 等模型配置；本机特有的本地路径 package 自动保留：
+Merge with `jq` — overwrites only the shared keys, preserves machine-local model settings like `defaultProvider` / `defaultModel` / `enabledModels`; machine-specific local-path packages are preserved automatically:
 
 ```bash
 [ -f ~/.pi/agent/settings.json ] || echo '{}' > ~/.pi/agent/settings.json
@@ -191,99 +191,99 @@ jq -s --argjson local "$PKGS_LOCAL" \
   && mv /tmp/pi-settings.json ~/.pi/agent/settings.json
 ```
 
-改共享配置时，编辑 `settings.shared.json`、commit、push，在另一台机器上 `git pull` 后重跑本节。
+To change shared configuration: edit `settings.shared.json`, commit, push; on the other machines `git pull` and re-run this section.
 
-### 6.3 补齐 / 更新 extensions
+### 6.3 Install missing / update extensions
 
 ```bash
-pi update --extensions   # 按 settings 里的 packages 补齐缺失，并更新已有的
+pi update --extensions   # installs missing packages from settings, updates the rest
 ```
 
-跑完后检查 `ls ~/.pi/agent/skills/`：pi 同步 package skills 时可能清掉了第 3 节的软链，缺了就重跑第 3 节。
+Afterwards check `ls ~/.pi/agent/skills/`: pi's package-skill sync may have wiped the section-3 symlinks; re-run section 3 if any are missing.
 
-### 6.4 收敛 skills
+### 6.4 Converge skills
 
-期望清单 = 第 3 节 `$SKILLS`（repo 软链）；本机保留的外部 skill 列入 `SKILLS_KEEP`（find-skills、gitops-* 来自 fluxcd/agent-skills 等外部仓库，alicloud 同理，需要时单独安装）。其余一律删除——未登记的即本机漂移：
+Expected list = `$SKILLS` from section 3 (repo symlinks); machine-kept external skills go in `SKILLS_KEEP` (find-skills, gitops-* come from external repos like fluxcd/agent-skills; same for alicloud — install them separately when needed). Everything else is deleted — unregistered entries are local drift:
 
 ```bash
 SKILLS="code-review codebase-design confluence-pages diagnosing-bugs \
 doc-writing domain-modeling git-commit grill-me grill-with-docs \
-grilling research writing-great-skills"   # 与第 3 节相同
+grilling research writing-great-skills"   # same as section 3
 SKILLS_KEEP="find-skills gitops-cluster-debug gitops-knowledge gitops-repo-audit alicloud"
 
 for entry in ~/.agents/skills/*; do
   name=$(basename "$entry")
   case " $SKILLS $SKILLS_KEEP " in
-    *" $name "*) ;;                            # 受管或保留
-    *) echo "remove: $name"; rm -rf "$entry" ;;  # 软链或实体目录都直接删
+    *" $name "*) ;;                            # managed or kept
+    *) echo "remove: $name"; rm -rf "$entry" ;;  # symlink or real dir, delete either way
   esac
 done
-find ~/.pi/agent/skills -type l ! -exec test -e {} \; -delete   # 清掉因此失效的软链
+find ~/.pi/agent/skills -type l ! -exec test -e {} \; -delete   # clean up the symlinks this breaks
 ```
 
-`~/.pi/agent/skills/` 下的 package skills 由 pi 自己管理，不手动动。
+Package skills under `~/.pi/agent/skills/` are managed by pi itself — don't touch them manually.
 
-### 6.5 收敛 MCP server
+### 6.5 Converge MCP servers
 
-通用 server 只有 context-mode（第 4 节）；`MCP_KEEP` 登记本机特有的 server，其余从 `~/.agents/mcp.json` 剔除：
+The only common server is context-mode (section 4); register machine-specific servers in `MCP_KEEP`, and strip everything else from `~/.agents/mcp.json`:
 
 ```bash
-MCP_KEEP="mcp-atlassian mcp-grafana aliyun-openapi-core"   # 按机器实际情况填
+MCP_KEEP="mcp-atlassian mcp-grafana aliyun-openapi-core"   # fill in per machine
 keep=$(printf '%s\n' context-mode $MCP_KEEP | jq -Rn '[inputs]')
 jq --argjson keep "$keep" \
   '.mcpServers |= with_entries(select(.key as $k | $keep | index($k)))' \
   ~/.agents/mcp.json > /tmp/mcp.json && mv /tmp/mcp.json ~/.agents/mcp.json
 ```
 
-注意 `mcp.json` 被其它 agent 共用，剔除前确认没有别的 agent 依赖该 server。
+`mcp.json` is shared with other agents — before stripping a server, confirm no other agent depends on it.
 
-### 6.6 散装 pi 资源
+### 6.6 Loose pi resources
 
-`~/.pi/agent/extensions/`、`~/.pi/agent/agents/`、`~/.pi/agent/themes/` 里的散装文件是 pi 专有、无清单可比，有内容即本机漂移，确认后删除（或纳入 repo 管理）：
+Loose files in `~/.pi/agent/extensions/`, `~/.pi/agent/agents/`, `~/.pi/agent/themes/` are pi-specific with no managed list to compare against — anything present is local drift; review and delete (or bring under repo management):
 
 ```bash
 ls ~/.pi/agent/extensions/ ~/.pi/agent/agents/ ~/.pi/agent/themes/ 2>/dev/null
 ```
 
-### 不随 repo 同步的本机配置
+### Local configuration that does NOT sync with the repo
 
-| 配置 | 位置 | 说明 |
-|------|------|------|
-| 模型与 provider | `~/.pi/agent/settings.json` 的 `defaultProvider` / `defaultModel` / `enabledModels` | 各机器可能不同，由 6.2 的合并逻辑保留 |
-| 登录凭据 | `~/.pi/agent/auth.json` | 每台机器用 `/login` 重新登录 |
-| 本机 MCP server | `~/.agents/mcp.json` | 登记进 6.5 的 `MCP_KEEP` 即保留 |
-| 外部 skills | `~/.agents/skills/` 下的实体目录 | 登记进 6.4 的 `SKILLS_KEEP` 即保留 |
-| 本机 package | `settings.json` 里本地路径来源的条目 | 6.1 / 6.2 自动识别并保留 |
+| Configuration | Location | Note |
+|---------------|----------|------|
+| Models and provider | `defaultProvider` / `defaultModel` / `enabledModels` in `~/.pi/agent/settings.json` | may differ per machine; preserved by the 6.2 merge |
+| Login credentials | `~/.pi/agent/auth.json` | log in again with `/login` on each machine |
+| Machine MCP servers | `~/.agents/mcp.json` | register in `MCP_KEEP` (6.5) to keep |
+| External skills | real directories under `~/.agents/skills/` | register in `SKILLS_KEEP` (6.4) to keep |
+| Machine packages | local-path entries in `settings.json` | auto-detected and preserved by 6.1 / 6.2 |
 
-## 7. 验证
+## 7. Verify
 
 ```bash
 SKILL=~/.config/coding-skills/common/pi-installation
 
-pi list                    # 应为共享清单 + 本机特有的本地路径 package
-# extensions 无多余、无缺失（两条输出都应为空）：
+pi list                    # should show the shared list + machine-specific local-path packages
+# extensions: nothing extra, nothing missing (both outputs should be empty):
 comm -23 <(jq -r '(.packages // [])[]' ~/.pi/agent/settings.json | grep -E '^(npm|git):' | sort) \
   <(jq -r '.packages[]' "$SKILL/settings.shared.json" | sort)
 comm -13 <(jq -r '(.packages // [])[]' ~/.pi/agent/settings.json | sort) \
   <(jq -r '.packages[]' "$SKILL/settings.shared.json" | sort)
 
-ls -la ~/.agents/skills    # 每个受管 skill 为指向 repo 的软链；无清单外条目
-ls -la ~/.pi/agent/skills  # 每个 skill 应为指向 ~/.agents/skills 的软链
-find ~/.pi/agent/skills -type l ! -exec test -e {} \;   # 无失效软链
+ls -la ~/.agents/skills    # each managed skill is a symlink to the repo; no off-list entries
+ls -la ~/.pi/agent/skills  # each skill should be a symlink into ~/.agents/skills
+find ~/.pi/agent/skills -type l ! -exec test -e {} \;   # no broken symlinks
 ls -la ~/.agents/AGENTS.md ~/.pi/agent/AGENTS.md
 
-command -v context-mode                                    # 全局二进制存在
-jq -e '.mcpServers["context-mode"]' ~/.agents/mcp.json     # MCP 已配置
-jq -r '.mcpServers | keys[]' ~/.agents/mcp.json            # 应为 context-mode + MCP_KEEP 登记项
+command -v context-mode                                    # global binary exists
+jq -e '.mcpServers["context-mode"]' ~/.agents/mcp.json     # MCP configured
+jq -r '.mcpServers | keys[]' ~/.agents/mcp.json            # should be context-mode + MCP_KEEP entries
 
-# settings 共享键一致：
+# shared settings keys identical:
 jq '{theme, defaultThinkingLevel, hideThinkingBlock}' ~/.pi/agent/settings.json > /tmp/a.json
 jq '{theme, defaultThinkingLevel, hideThinkingBlock}' "$SKILL/settings.shared.json" > /tmp/b.json
 diff /tmp/a.json /tmp/b.json && echo settings OK
 
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:10803/   # pi-web 有响应
-systemctl --user is-active pi-web           # user service 状态（注意带 --user）
-loginctl show-user "$USER" -p Linger        # 应为 Linger=yes（开机自启前提）
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:10803/   # pi-web responds
+systemctl --user is-active pi-web           # user service status (note the --user)
+loginctl show-user "$USER" -p Linger        # should be Linger=yes (autostart prerequisite)
 ```
 
-启动 `pi` 后输入 `/reload`，skills 会出现在系统提示的 available skills 列表中。
+After starting `pi`, type `/reload`; the skills will appear in the available-skills list of the system prompt.
