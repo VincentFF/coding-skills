@@ -27,12 +27,14 @@ Windows is not supported.
 
 ## 1. Install the pi CLI
 
+pi lives in its own npm prefix `~/.npm-global`, isolated from the nvm global root, so its dependency tree never conflicts with other global tools:
+
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-pi --version   # verify
+npm install -g --ignore-scripts --prefix ~/.npm-global @earendil-works/pi-coding-agent
+pi --version   # verify; currently 0.85.1
 ```
 
-pnpm also works: `pnpm add -g @earendil-works/pi-coding-agent`.
+Because of the dedicated prefix, a plain `npm list -g` does NOT show pi — verify with `npm --prefix ~/.npm-global list -g --depth=0`, and make sure `~/.npm-global/bin` is on `PATH` (e.g. via your shell rc). pnpm also works: `pnpm add -g @earendil-works/pi-coding-agent`.
 
 ## 2. Clone the coding-skills repo
 
@@ -81,7 +83,7 @@ Extensions are a pi-specific mechanism, installed under `~/.pi/agent/`, and cann
 ```bash
 pi install npm:@upstash/context7-pi      # Context7 documentation lookup
 pi install npm:pi-mcp-adapter            # MCP server integration
-pi install npm:@tintinweb/pi-subagents   # sub-agent / workflow orchestration
+pi install npm:pi-subagents              # sub-agent / workflow orchestration (supervisor, council-mode)
 pi install npm:pi-web-access             # web search and content fetching
 pi install npm:@narumitw/pi-btw          # additional toolset
 pi install npm:@janvitos/pi-plan-build   # Plan / Build workflow, explicit approval and implementation handoff
@@ -112,16 +114,18 @@ The pi package only provides context-mode's in-session tools. Full capability ad
    }
    ```
 
+   On a real machine this file also holds machine-specific servers **with credentials** (e.g. aliyun-openapi-core) — never copy it into the repo or into shared docs.
+
 ## 5. Install pi-web (system daemon)
 
-pi-web (<https://github.com/agegr/pi-web>) runs as a system daemon (Linux → systemd, macOS → launchd), starts with the machine, fixed port **10803**.
+pi-web (<https://github.com/agegr/pi-web>) runs as a system daemon (Linux → systemd, macOS → launchd), starts with the machine, fixed port **30141**.
 
 Note: the upstream README only covers foreground runs (`npx @agegr/pi-web@latest` / `pi-web`) and has **no** systemd/launchd section — daemonization is your own job. Steps below (Linux systemd user service example, Node ≥ 22.19):
 
 1. Install globally and confirm the flags:
 
    ```bash
-   npm install -g @agegr/pi-web@latest
+   npm install -g @agegr/pi-web@latest   # pnpm also works: pnpm add -g @agegr/pi-web (current mac uses pnpm)
    pi-web --help    # confirm --port / --no-open etc.
    ```
 
@@ -133,7 +137,7 @@ Note: the upstream README only covers foreground runs (`npx @agegr/pi-web@latest
    After=network.target
 
    [Service]
-   ExecStart=%h/.nvm/versions/node/v24.20.0/bin/pi-web --port 10803 --no-open
+   ExecStart=%h/.nvm/versions/node/v24.20.0/bin/pi-web --no-open --hostname 127.0.0.1 --port 30141
    Restart=on-failure
    RestartSec=3
 
@@ -149,9 +153,16 @@ Note: the upstream README only covers foreground runs (`npx @agegr/pi-web@latest
    loginctl enable-linger "$USER"
    ```
 
-4. Verify `curl http://127.0.0.1:10803/` responds.
+4. Verify `curl http://127.0.0.1:30141/` responds.
 
-It is a **user service** — all queries and management need `--user`: `systemctl --user status pi-web`, `journalctl --user -u pi-web -f`. macOS has no systemd; use a launchd `~/Library/LaunchAgents/agegr.pi-web.plist` instead (field mapping: ProgramArguments = `pi-web --port 10803 --no-open`, KeepAlive=true, RunAtLoad=true).
+It is a **user service** — all queries and management need `--user`: `systemctl --user status pi-web`, `journalctl --user -u pi-web -f`. macOS has no systemd; use launchd instead. The current mac runs `~/Library/LaunchAgents/com.pi-web.server.plist` (pi-web installed via pnpm, binary at `~/Library/pnpm/bin/pi-web`):
+
+- `Label` = `com.pi-web.server` — check with `launchctl list | grep pi-web`; logs at `~/Library/Logs/pi-web.out.log` / `pi-web.err.log`
+- `ProgramArguments` = `pi-web --no-open --hostname 127.0.0.1 --port 30141`
+- `KeepAlive` = `RunAtLoad` = true
+- `EnvironmentVariables.PATH` must include the nvm node bin dir and `~/Library/pnpm`, otherwise the daemon cannot spawn `pi` / node
+
+pi-web also registers its relay as a machine-local package entry in `settings.json` — sections 6.1 / 6.2 detect and preserve it automatically.
 
 pi-side web access configuration is per-machine and out of scope for this guide.
 
@@ -281,9 +292,10 @@ jq '{theme, defaultThinkingLevel, hideThinkingBlock}' ~/.pi/agent/settings.json 
 jq '{theme, defaultThinkingLevel, hideThinkingBlock}' "$SKILL/settings.shared.json" > /tmp/b.json
 diff /tmp/a.json /tmp/b.json && echo settings OK
 
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:10803/   # pi-web responds
-systemctl --user is-active pi-web           # user service status (note the --user)
-loginctl show-user "$USER" -p Linger        # should be Linger=yes (autostart prerequisite)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:30141/   # pi-web responds
+systemctl --user is-active pi-web           # Linux user service status (note the --user)
+loginctl show-user "$USER" -p Linger        # Linux: Linger=yes is the autostart prerequisite
+launchctl list | grep com.pi-web.server     # macOS: pi-web daemon loaded
 ```
 
 After starting `pi`, type `/reload`; the skills will appear in the available-skills list of the system prompt.
