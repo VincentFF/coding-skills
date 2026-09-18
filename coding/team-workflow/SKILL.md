@@ -5,13 +5,13 @@ description: Governed multi-subagent execution workflow (recon → plan → work
 
 # Team Workflow
 
-Governed pipeline for high-risk or architectural changes. The parent keeps user alignment, planning, routing, and final acceptance; subagents execute. Dispatch mechanics (async launch, steering, evidence, isolation) follow the `pi-subagents` skill — do not restate them here.
+Governed pipeline for high-risk or architectural changes. The parent keeps user alignment, planning, routing, and final acceptance; subagents execute. Dispatch mechanics (async launch, steer/resume, evidence, isolation) follow the `pi-subagents` skill — do not restate them here.
 
 **Entry condition**: delegation is authorized (explicit user request or an approved proposal). Not authorized → work directly, do not enter this pipeline.
 
 ## Roster
 
-- `scout` — read-only recon: affected files, dependencies, blast radius.
+- `scout` — read-only recon: affected files, dependencies, blast radius. Read-only holds by instruction; restrict tools at dispatch when the guarantee must be hard.
 - `worker` — the single writer; all edits go through one `worker` session per worktree.
 - `reviewer` — fresh-context adversarial review of the worker's diff.
 
@@ -24,10 +24,10 @@ Skip when the parent already knows the affected area. Otherwise dispatch `scout`
 Present a bounded plan — objective, target files/seams, interface contracts, verification commands — and get user approval **before any write**. Unapproved decisions surfaced later are relayed to the user, never decided by the parent.
 
 ### 3. Execute
-Dispatch one `worker` with the approved spec: objective, target files, constraints/non-goals, acceptance criteria, verification commands.
+Dispatch one `worker` with the approved spec: objective, target files, constraints/non-goals, acceptance criteria, verification commands. For cross-module work with separable seams, fan out one `worker` per lane/worktree — see the `pi-subagents` multi-lane orchestration reference.
 
-### 4. Review–steer loop (quality gate)
-Dispatch `reviewer` in fresh context with the spec + diff. On actionable findings: steer the **same** `worker` session (preserve context, never respawn), re-verify, re-review. Exit when the reviewer passes or the user explicitly accepts residual issues — then deliver.
+### 4. Review–fix loop (quality gate)
+Dispatch `reviewer` in fresh context with the spec + diff. On actionable findings: resume the **same** `worker` run (preserved context), which fixes and re-verifies; then resume the **same** `reviewer` so it can confirm its findings were addressed. If the same dispute survives two rounds, stop and present both positions to the user for arbitration. Deliver only when the reviewer passes — or the user explicitly accepts residual issues — **and** the worker's verification output is on record.
 
 ## Escalations (optional, on demand)
 
