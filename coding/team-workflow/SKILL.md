@@ -23,7 +23,7 @@ Governed pipeline for high-risk or architectural changes. The parent keeps user 
 - **Otherwise**: conditional `scout` recon when the parent doesn't already know the area; then present a bounded plan — objective, target files/seams, interface contracts, verification commands — and get user approval **before any write**.
 
 ### 2. Execute
-Dispatch granularity: one `worker` session per change — or per lane/worktree when the change has separable seams (see the `pi-subagents` multi-lane orchestration reference). Give the worker: change name, contextFiles (from `openspec instructions apply`), assigned tasks, constraints/non-goals, verification commands.
+Dispatch granularity: one `worker` session per change — or per lane/worktree when the change has separable seams (see the `pi-subagents` multi-lane orchestration reference). Give the worker: change name, contextFiles, `context` and `operationGuidance` (all from `openspec instructions apply --change "<name>" --json`), assigned tasks, constraints/non-goals, verification commands, and — for documentation, config, or content-producing tasks — **fact sources**: a `fact → authoritative source path` list the parent gathers before dispatch (a two-minute recon; cite the source files or external docs the output must align with).
 
 The worker runs this loop inside its own session, per behavior task:
 
@@ -31,7 +31,7 @@ The worker runs this loop inside its own session, per behavior task:
 2. **green** — implement until the task's verification command passes in full.
 3. **record** — mark the task `- [x]` and include red/green evidence in the report.
 
-Non-behavior tasks (docs, packaging, examples) skip red and verify directly.
+Non-behavior tasks (docs, packaging, examples) skip red, but their record MUST carry one of two evidence forms: (a) mechanical verification — command + output excerpt (pack, typecheck, tests); or (b) fact check — a **fact → source mapping table**, each collection-type fact (enum values, path lists, identifiers, versions) citing its authoritative source path and line. A prose "已核对，一致" declaration is not evidence.
 
 Escalate to the parent only when the spec is ambiguous or self-contradictory, or the same failure survives two genuine fix attempts. The parent routes spec problems to `/opsx-update` or the user; it never decides technical questions itself. Scope beyond the spec is never absorbed.
 
@@ -66,7 +66,17 @@ Dispatch `reviewer` in fresh context with: the change's contextFiles, the full d
 On actionable findings: resume the **same** `worker` run (preserved context), which fixes and re-verifies; then resume the **same** `reviewer` so it can confirm its findings were addressed. If the same dispute survives two rounds, stop and present both positions to the user for arbitration.
 
 ### 4. Acceptance
-Deliver only when the reviewer passes — or the user explicitly accepts residual issues — **and** the worker's verification output is on record. OpenSpec adds two gates, in order: run `/opsx-verify` (implementation–artifact coherence), then suggest `/opsx-archive`. Reviewer (adversarial quality) and verify (spec conformance) are distinct; both are required.
+
+Gate order — cheap mechanical checks before expensive judgment:
+
+1. **Triage** — the parent runs `/opsx-verify` in its own context (no subagent). Objective findings (unchecked tasks, missing artifacts) go straight back to the worker; do not dispatch the reviewer yet. Heuristic findings (untraced requirements, uncovered scenarios) are not bounced back — they go into the reviewer dispatch as leads to confirm or dismiss. A verify pass proves nothing; it never discharges the reviewer.
+2. **Review** — the section-3 loop, with verify's report included in the reviewer dispatch.
+3. **Artifact validation** — `openspec validate <change> --strict`.
+4. Suggest `/opsx-archive`.
+
+Deliver only when the reviewer passes — or the user explicitly accepts residual issues — **and** the worker's verification output is on record.
+
+Outside this workflow (solo `/opsx-apply`), `/opsx-verify` is the only implementation–artifact coherence check before archive; never skip it there.
 
 ## Escalations (optional, on demand)
 
