@@ -7,7 +7,12 @@ description: Governed multi-subagent execution workflow (worker + review loop ov
 
 Governed pipeline for high-risk or architectural changes. The parent keeps user alignment, routing, and final acceptance; subagents execute. Dispatch mechanics (async launch, steer/resume, evidence, isolation) follow the `pi-subagents` skill — do not restate them here. Plan artifacts, task state, and archive gates follow the `openspec-*` skills — do not restate those either.
 
-**Entry condition**: delegation is authorized (explicit user request or an approved proposal). Not authorized → work directly, do not enter this pipeline.
+**Entry condition**: delegation is authorized. Explicit user request ("走多 agent 流程", "team workflow", "用 subagent 团队") directly enters this pipeline. Otherwise default to solo execution (direct execution or solo `/opsx-apply`). Recommend and enter team pipeline only when any of the following risk signals is matched (and state the matched signal to the user):
+- Delta modifies existing requirements: specs delta contains MODIFIED or RENAMED (contract changes, regression risk).
+- Tasks declare modifications to existing test assertions (signaled by explicit test paths in tasks.md).
+- Touches core critical paths enumerated in the project's AGENTS.md (e.g. startup, instance lifecycle, resource filtering).
+- Design specifies "ADR required" or other irreversible architectural decisions.
+When uncertain, prefer team pipeline over solo (asymmetric cost: extra verification time vs. leaking a critical regression). When none of the signals match, do not delegate.
 
 ## Roster
 
@@ -69,7 +74,7 @@ On actionable findings: resume the **same** `worker` run (preserved context), wh
 
 Gate order — cheap mechanical checks before expensive judgment:
 
-1. **Triage** — the parent runs `/opsx-verify` in its own context (no subagent). Objective findings (unchecked tasks, missing artifacts) go straight back to the worker; do not dispatch the reviewer yet. Heuristic findings (untraced requirements, uncovered scenarios) are not bounced back — they go into the reviewer dispatch as leads to confirm or dismiss. A verify pass proves nothing; it never discharges the reviewer.
+1. **Triage** — the parent performs lightweight objective checks in its own context (no subagent): checkbox completeness, missing artifacts, and an independent rerun of mechanical verification commands (typecheck, tests). Objective defects go straight back to the worker; do not dispatch the reviewer yet. Do not duplicate in-depth scenario coverage, sensitivity analysis, or evidence auditing in parent context — bundle heuristic verification findings as candidate leads into reviewer dispatch. A verify pass proves nothing; it never discharges the reviewer.
 2. **Review** — the section-3 loop, with verify's report included in the reviewer dispatch.
 3. **Artifact validation** — `openspec validate <change> --strict`.
 4. Suggest `/opsx-archive`.
