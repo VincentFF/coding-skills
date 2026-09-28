@@ -7,12 +7,12 @@ description: Governed multi-subagent execution workflow (worker + review loop ov
 
 Governed pipeline for high-risk or architectural changes. The parent keeps user alignment, routing, and final acceptance; subagents execute. Dispatch mechanics (async launch, steer/resume, evidence, isolation) follow the `pi-subagents` skill — do not restate them here. Plan artifacts, task state, and archive gates follow the `openspec-*` skills — do not restate those either.
 
-**Entry condition**: delegation is authorized. Explicit user request ("走多 agent 流程", "team workflow", "用 subagent 团队") directly enters this pipeline. Otherwise default to solo execution (direct execution or solo `/opsx-apply`). Recommend and enter team pipeline only when any of the following risk signals is matched (and state the matched signal to the user):
-- Delta modifies existing requirements: specs delta contains MODIFIED or RENAMED (contract changes, regression risk).
-- Tasks declare modifications to existing test assertions (signaled by explicit test paths in tasks.md).
-- Touches core critical paths enumerated in the project's AGENTS.md (e.g. startup, instance lifecycle, resource filtering).
-- Design specifies "ADR required" or other irreversible architectural decisions.
-When uncertain, prefer team pipeline over solo (asymmetric cost: extra verification time vs. leaking a critical regression). When none of the signals match, do not delegate.
+**Entry condition**: delegation requires an explicit user request ("走多 agent 流程", "team workflow", "用 subagent 团队") or an applicable project/user instruction that mandates team execution. A project rule naming critical paths is such authorization. Otherwise default to solo execution (direct execution or solo `/opsx-apply`); risk alone is a reason to **recommend** team workflow and ask for approval, not to launch agents. State the matched risk when recommending it:
+- A modified contract has material compatibility, rollback, persistence, or security risk. A MODIFIED/RENAMED header alone is not enough.
+- The change touches a critical path named by the project, even when the project recommends rather than mandates team execution.
+- The design introduces a hard-to-reverse decision (for example, "ADR required").
+- Existing test assertions must change because observable behavior changes; a test file path alone is not a risk signal.
+When the risk is uncertain, explain it and ask rather than delegating by default. When none of these signals match, use solo execution unless the user explicitly requests the team.
 
 ## Roster
 
@@ -24,23 +24,25 @@ When uncertain, prefer team pipeline over solo (asymmetric cost: extra verificat
 ## Pipeline
 
 ### 1. Plan source
-- **OpenSpec project** (`openspec/` root present): the plan is an approved change — its proposal/specs/design/tasks artifacts, already reviewed by the user. Do not re-present a plan for approval; go to Execute. Optional recon: the parent may dispatch `scout` while artifacts are being drafted, never during apply.
+- **OpenSpec project** (`openspec/` root present): the plan is the selected change's proposal/specs/design/tasks artifacts. The user's apply request permits execution but artifact completion and `openspec validate` prove neither consistency nor acceptance. Do not re-present the plan for approval when it is coherent. Optional recon: the parent may dispatch `scout` while artifacts are being drafted, never during apply.
 - **Otherwise**: conditional `scout` recon when the parent doesn't already know the area; then present a bounded plan — objective, target files/seams, interface contracts, verification commands — and get user approval **before any write**.
+
+**Plan-readiness gate (before any writer):** compare required outputs and constraints with the tasks, documentation obligations, and their verification commands. Check that a verification check can fail for the behavior it claims to cover, and that it does not forbid content another artifact requires. For non-OpenSpec work, compare the approved plan with its acceptance checks. A material contradiction pauses execution: route an OpenSpec conflict to `/opsx-update` or the user; do not let the worker resolve it by deleting required content or treating a CLI `ready` state as semantic proof.
 
 ### 2. Execute
 Dispatch granularity: one `worker` session per change — or per lane/worktree when the change has separable seams (see the `pi-subagents` multi-lane orchestration reference). Give the worker: change name, contextFiles, `context` and `operationGuidance` (all from `openspec instructions apply --change "<name>" --json`), assigned tasks, constraints/non-goals, verification commands, and — for documentation, config, or content-producing tasks — **fact sources**: a `fact → authoritative source path` list the parent gathers before dispatch (a two-minute recon; cite the source files or external docs the output must align with).
 
 The worker runs this loop inside its own session, per behavior task:
 
-1. **red** — write the tests named by the task's 「验证：」 clause; run them; capture the failing output.
-2. **green** — implement until the task's verification command passes in full.
-3. **record** — mark the task `- [x]` and include red/green evidence in the report.
+1. **red, when adding behavior** — write the tests named by the task's `Verification:` clause and run them before implementation. The failure must expose the missing behavior. A broken fixture, timing assumption, or harness error is not red evidence: repair the test and rerun it before recording red.
+2. **green** — implement until the task's verification command passes in full. A test preserving existing behavior may remain green; name the regression it would catch instead of manufacturing a failure.
+3. **record** — mark the task `- [x]` only after its full behavior and verification are complete. Include valid red/green evidence when applicable, or green evidence plus the regression failure mode for preserved behavior.
 
 Non-behavior tasks (docs, packaging, examples) skip red, but their record MUST carry one of two evidence forms: (a) mechanical verification — command + output excerpt (pack, typecheck, tests); or (b) fact check — a **fact → source mapping table**, each collection-type fact (enum values, path lists, identifiers, versions) citing its authoritative source path and line. A prose "已核对，一致" declaration is not evidence.
 
-Escalate to the parent only when the spec is ambiguous or self-contradictory, or the same failure survives two genuine fix attempts. The parent routes spec problems to `/opsx-update` or the user; it never decides technical questions itself. Scope beyond the spec is never absorbed.
+Escalate to the parent when the spec or task checks are ambiguous or self-contradictory, or the same failure survives two genuine fix attempts. The parent routes contract problems to `/opsx-update` or the user; it never settles a product choice by reinterpreting a check. Scope beyond the spec is never absorbed.
 
-**Evidence** — per task, the worker's report carries: the red command + failing output excerpt, and the green command + passing output excerpt. Tests are edited only to match the spec scenario better, never to fit the implementation. A test that has never been red proves nothing.
+**Evidence** — per task, report the command, relevant failure or passing excerpt, and why the result demonstrates the named behavior. Distinguish a genuine pre-implementation failure from a test-authoring error; do not claim an invalid red as proof. Tests are edited only to match the spec scenario better, never to fit the implementation.
 
 ### 3. Review–fix loop (quality gate)
 Dispatch `reviewer` in fresh context with: the change's contextFiles, the full diff, and the worker's evidence. Review on two axes — report them separately, never merge or rerank findings across axes (one axis must not mask the other):
@@ -50,7 +52,8 @@ Dispatch `reviewer` in fresh context with: the change's contextFiles, the full d
 - Behavior in the diff nobody asked for (scope creep); specified behavior silently narrowed.
 - **Test validity**: every delta scenario has a test; assertions check behavior, not implementation details; no `.skip`/`.only`, swallowed assertions, or test files the runner never picks up.
 - **Sensitivity**: for each core behavior, name the test that would go red if you broke it. A suite no obvious bug can break proves nothing.
-- **Evidence audit**: red evidence predates the implementation and matches each task's 「验证：」 clause.
+- **Evidence audit**: when red is applicable, it predates implementation, fails for the missing behavior rather than a fixture bug, and matches the task's `Verification:` clause. For preserved behavior, verify the stated regression failure mode instead.
+- **Planning consistency**: identify any required output that a task or its check rules out; quote the conflicting artifact lines. Do not downgrade an unresolved contradiction to a style note.
 - Requirement edges and project hard constraints that no scenario encodes (dependencies, compatibility, side effects).
 
 **Standards axis** — against the repo's documented standards (AGENTS.md etc.), plus the smell baseline below. A documented repo standard always overrides the baseline; baseline smells are labelled judgement calls, never hard violations; skip anything tooling already enforces.
@@ -68,20 +71,18 @@ Dispatch `reviewer` in fresh context with: the change's contextFiles, the full d
 - Middle Man → cut the delegate
 - Refused Bequest → composition over inheritance
 
-On actionable findings: resume the **same** `worker` run (preserved context), which fixes and re-verifies; then resume the **same** `reviewer` so it can confirm its findings were addressed. If the same dispute survives two rounds, stop and present both positions to the user for arbitration.
+Classify each finding separately from its severity: **contract blocker** (ambiguous or conflicting required behavior; pause for artifact update or user decision), **implementation defect** (fix now), or **optional note** (may remain without changing the contract). A positive verdict with notes MUST NOT contain an unresolved contract blocker; a user decision that changes required behavior goes into the plan before work resumes. Resume the **same** `worker` for implementation defects and re-verification, then the **same** `reviewer` for targeted confirmation. Do not force another fix round solely for optional style notes. If the same dispute survives two rounds, stop and present both positions to the user for arbitration.
 
 ### 4. Acceptance
 
-Gate order — cheap mechanical checks before expensive judgment:
+Gate order — check cheap objective defects before deep review, then validate the final tree:
 
-1. **Triage** — the parent performs lightweight objective checks in its own context (no subagent): checkbox completeness, missing artifacts, and an independent rerun of mechanical verification commands (typecheck, tests). Objective defects go straight back to the worker; do not dispatch the reviewer yet. Do not duplicate in-depth scenario coverage, sensitivity analysis, or evidence auditing in parent context — bundle heuristic verification findings as candidate leads into reviewer dispatch. A verify pass proves nothing; it never discharges the reviewer.
-2. **Review** — the section-3 loop, with verify's report included in the reviewer dispatch.
-3. **Artifact validation** — `openspec validate <change> --strict`.
-4. Suggest `/opsx-archive`.
+1. **Triage** — the parent checks checkbox completeness, missing artifacts, and focused verification on the current tree (targeted tests/typecheck as applicable). Objective defects go straight back to the worker before reviewer dispatch. Do not duplicate scenario coverage, sensitivity analysis, or evidence auditing in parent context; give candidate leads to the reviewer. A mechanical pass never discharges the reviewer.
+2. **Review** — run the section-3 loop. Contract blockers stop it for a plan update or user decision, not an `OK with notes` verdict.
+3. **Final-tree gate** — after the last edit or reviewer fix, the parent independently reruns the project's required mechanical checks (including its full suite when required) on that exact tree and records the result. Any later edit invalidates affected results. For OpenSpec changes, run `openspec validate <change> --strict` and complete any project-mandated `/opsx-verify`; team review does not silently substitute for it. Avoid repeating an expensive full gate before review when focused checks can triage the diff.
+4. Suggest `/opsx-archive` only when the project's archive gates are met and no contract blocker remains.
 
-Deliver only when the reviewer passes — or the user explicitly accepts residual issues — **and** the worker's verification output is on record.
-
-Outside this workflow (solo `/opsx-apply`), `/opsx-verify` is the only implementation–artifact coherence check before archive; never skip it there.
+Deliver only when the reviewer passes, the worker's evidence is on record, and the final-tree gate passes. Optional notes may remain; changed required behavior must be reconciled in the plan rather than waived by a positive verdict. In solo `/opsx-apply`, do not skip the project's `/opsx-verify` coherence check.
 
 ## Escalations (optional, on demand)
 
