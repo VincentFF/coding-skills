@@ -1,97 +1,102 @@
 ---
 name: team-workflow
-description: Governed multi-subagent execution workflow (worker + review loop over a plan). Use when the user explicitly requests team workflow, multi-agent coordination ("走多 agent 流程", "team workflow", "用 subagent 团队"), or approves governed execution for high-risk, architectural, cross-module tasks. In OpenSpec projects, layers team execution onto an approved change.
+description: Execute pi-profile-switch OpenSpec changes with a worker and an independent reviewer. Use when the user explicitly requests team workflow or multi-agent execution for this project. OpenSpec supplies the plan; the reviewer also completes opsx-verify; the parent owns final acceptance.
 ---
 
 # Team Workflow
 
-Governed pipeline for high-risk or architectural changes. The parent keeps user alignment, routing, and final acceptance; subagents execute. Dispatch mechanics (async launch, steer/resume, evidence, isolation) follow the `pi-subagents` skill — do not restate them here. Plan artifacts, task state, and archive gates follow the `openspec-*` skills — do not restate those either.
+## Scope and sources
 
-**Entry condition**: delegation requires an explicit user request ("走多 agent 流程", "team workflow", "用 subagent 团队") or an applicable project/user instruction that mandates team execution. A project rule naming critical paths is such authorization. Otherwise default to solo execution (direct execution or solo `/opsx-apply`); risk alone is a reason to **recommend** team workflow and ask for approval, not to launch agents. State the matched risk when recommending it:
-- A modified contract has material compatibility, rollback, persistence, or security risk. A MODIFIED/RENAMED header alone is not enough.
-- The change touches a critical path named by the project, even when the project recommends rather than mandates team execution.
-- The design introduces a hard-to-reverse decision (for example, "ADR required").
-- Existing test assertions must change because observable behavior changes; a test file path alone is not a risk signal.
-When the risk is uncertain, explain it and ask rather than delegating by default. When none of these signals match, use solo execution unless the user explicitly requests the team.
+Use this skill for **pi-profile-switch OpenSpec changes** after team execution has been explicitly authorized by the user or mandated by applicable instructions. Risk alone does not authorize delegation. Outside this project, stop using this skill and select the applicable workflow; do not impose these project rules elsewhere.
 
-## Roster
+The selected change's artifacts are the execution contract. Follow the project's `AGENTS.md` and `openspec/config.yaml`, the applicable `openspec-*` skills, and `pi-subagents` for delegation mechanics. Use OpenSpec's resolved paths and edit boundaries, including a selected store when applicable. Do not create a second plan, task ledger, evidence document, or workflow script merely to coordinate two agents.
 
-- `scout` — read-only recon: affected files, dependencies, blast radius. Planning phase only; never during apply.
-- `worker` — the single writer during implementation; retain one `worker` session per worktree across slices. The parent may take over a finished worker's worktree only for a bounded cleanup under the review rule below; never write concurrently.
-- `reviewer` — fresh-context adversarial review of the worker's diff and evidence.
-- `tester` — conditional role, only in the escalation below; writes tests blind to the implementation.
+## Owners
 
-## Pipeline
+| Owner | Responsibility |
+| --- | --- |
+| Parent | User intent, change selection, blocking plan conflicts, dispatch, final mechanical checks, acceptance, and publication authority. |
+| Worker | Implementation, task verification, and implementation checkboxes in the authoritative tasks artifact. |
+| Reviewer | Read-only independent review, `/opsx-verify`, and targeted confirmation of fixes. |
 
-### 1. Plan source
-- **OpenSpec project** (`openspec/` root present): the plan is the selected change's proposal/specs/design/tasks artifacts. The user's apply request permits execution but artifact completion and `openspec validate` prove neither consistency nor acceptance. Do not re-present the plan for approval when it is coherent. Optional recon: the parent may dispatch `scout` while artifacts are being drafted, never during apply.
-- **Otherwise**: conditional `scout` recon when the parent doesn't already know the area; then present a bounded plan — objective, target files/seams, interface contracts, verification commands — and get user approval **before any write**.
+Default to **one retained worker and one fresh-context reviewer per change**. Reuse their sessions for fixes and targeted re-review. Children do not delegate further. Keep one writer per working directory; the parent edits only after the worker has relinquished it.
 
-**Plan-readiness gate (before any writer):** compare required outputs and constraints with the tasks, documentation obligations, and their verification commands. For each consequential requirement, identify the check that would fail if it were broken, at the required boundary (unit, integration, process, or external interaction); a nearby simulation does not establish a stronger claim. Check that no verification forbids content another artifact requires. For non-OpenSpec work, compare the approved plan with its acceptance checks. A material contradiction or unresolved product choice pauses execution: route an OpenSpec conflict to `/opsx-update` or the user; do not let the worker resolve it by deleting required content or treating a CLI `ready` state as semantic proof.
+Add workers only for independent tasks with exclusive file ownership or isolated worktrees, settled interfaces, and a concrete elapsed-time benefit. Shared activation, generation, and rollback changes are not independent merely because they have different task numbers. Follow `pi-subagents` for partitioning and integration. Do not add scout, tester, or oracle stages by default.
 
-### 2. Execute
-Dispatch granularity: one `worker` session per change — or per lane/worktree when the change has separable seams (see the `pi-subagents` multi-lane orchestration reference). Divide long work into verifiable slices at behavior or integration seams. At each slice boundary, leave a brief checkpoint and continue in the same session unless an escalation needs the parent; do not require a new run or approval for every slice. Slices are progress checkpoints, not extra planning artifacts or substitutes for task verification.
+## 1. Start
 
-For a **new** worker, give the change name, contextFiles, `context` and `operationGuidance` (all from `openspec instructions apply --change "<name>" --json`), assigned tasks, constraints/non-goals, verification commands, and — for documentation, config, or content-producing tasks — **fact sources**: a `fact → authoritative source path` list the parent gathers before dispatch (a two-minute recon; cite the source files or external docs the output must align with). Point to authoritative files and quote only critical constraints; do not paste their full contents again in the handoff. A new worker must read the relevant originals, not rely on the handoff's shorthand.
+1. Follow `/opsx-apply` to select the change, check outstanding completed changes that require archive, resolve status and scope, and obtain apply instructions. Announce the selected change. Preserve CLI-controlled blocked states; `all_done` means task progress, not acceptance.
+2. Read the returned `contextFiles`, required `context`, and applicable `operationGuidance`. Obtain instructions once per change and artifact in the parent session, then reuse them in handoffs. Refresh status when needed and reread changed artifacts; cached task counts or prior file contents are not current evidence.
+3. Before dispatch, reconcile required outputs, scenarios, design interfaces, Doc Impact, and task `Verification:` clauses. Check for missing acceptance criteria, checks that reject required content, and unresolved product choices. A material conflict pauses execution for `/opsx-update` or the user. A coherent apply request does not require another plan approval.
+4. Assign the worker the remaining implementation tasks. Point to original sources rather than pasting artifacts or rewriting their requirements.
 
-The worker runs this loop inside its own session, per behavior task:
+Do not rerun planning analysis at every task boundary. If implementation exposes a new contract conflict, return to `/opsx-update`; neither worker nor reviewer may silently narrow the contract.
 
-1. **red, when adding behavior** — write the tests named by the task's `Verification:` clause and run them before implementation. The failure must expose the missing behavior. A broken fixture, timing assumption, or harness error is not red evidence: repair the test and rerun it before recording red.
-2. **green** — implement until the task's verification command passes in full. A test preserving existing behavior may remain green; name the regression it would catch instead of manufacturing a failure.
-3. **record** — mark the task `- [x]` only after its full behavior and verification are complete. Include valid red/green evidence when applicable, or green evidence plus the regression failure mode for preserved behavior.
+## 2. Implement
 
-Non-behavior tasks (docs, packaging, examples) skip red, but their record MUST carry one of two evidence forms: (a) mechanical verification — command + output excerpt (pack, typecheck, tests); or (b) fact check — a **fact → source mapping table**, each collection-type fact (enum values, path lists, identifiers, versions) citing its authoritative source path and line. A prose "已核对，一致" declaration is not evidence.
+The worker reads the authoritative inputs, implements within the assigned boundary, runs each task's verification, and updates its checkbox only when the complete requirement and verification pass. Follow task-specific fact sources and project documentation ownership. Report mismatches; do not duplicate existing source checklists into a separate fact table.
 
-Escalate to the parent when the spec or task checks are ambiguous or self-contradictory, or the same failure survives two genuine fix attempts. Also request a checkpoint after roughly 10 minutes without new passing evidence or a resolved hypothesis: report the current failure, attempts, files touched, next hypothesis, and whether the task is blocked. This is a soft progress trigger, not a deadline for a healthy long-running check; the parent decides whether to continue, change the approach, or pause. Near a hard run deadline, checkpoint before timeout rather than starting another speculative debug cycle. The parent routes contract problems to `/opsx-update` or the user; it never settles a product choice by reinterpreting a check. Scope beyond the spec is never absorbed.
+Use tests that expose the required behavior:
+- For a bug fix, prefer a reproducing regression test before the fix.
+- For new behavior, choose test-first execution when useful or explicitly required by the task.
+- For preserved behavior, valid existing regression coverage is sufficient.
+- For documentation or refactoring, use the task's mechanical or fact checks.
 
-**Evidence** — per task, report the command, relevant failure or passing excerpt, and why the result demonstrates the named behavior. Distinguish a genuine pre-implementation failure from a test-authoring error; do not claim an invalid red as proof. Tests are edited only to match the spec scenario better, never to fit the implementation. At each slice boundary, report completed and still-open tasks, the exact checks and outcomes, and remaining uncertainty. Do not create a second task ledger or paste full logs; task checkboxes remain the progress authority.
+Do not require historical red logs for every task. When a task explicitly requires red evidence, preserve it and distinguish a missing-behavior failure from a broken fixture or harness. Never change assertions merely to accommodate the implementation.
 
-**Continuation handoff** — when resuming the *same* worker, send only what changed since its last run: current task/slice, newly observed findings, exact files or evidence to revisit, and the next verification. Do not resend the initial assignment or whole plan; a checkpoint is an index back to the authoritative artifacts, not a replacement for them. If its previous context is unavailable and a new worker must take over, use a new-worker handoff plus the checkpoint and independently verify the current tree before resuming writes.
+Deduplicate shared verification commands when a successful run on the current tree fully covers multiple tasks. Rerun checks after relevant edits. Follow the project's required source checks, but do not run the full suite after every checkbox. Normal execution continues without mandatory slices, time-based checkpoints, or repeated user approval.
 
-### 3. Review–fix loop (quality gate)
-Dispatch `reviewer` in fresh context with: the change's contextFiles and authoritative artifacts, the full changed-file inventory (including untracked additions that ordinary `git diff` omits), how to inspect the current diff and new files, the worker's evidence as claims to audit, and the highest-risk boundaries. Do not send full logs or paraphrase the contract as a substitute for reading it. The reviewer independently checks originals and the current tree, prioritizing irreversible decisions, external inputs, persistence, compatibility, and process boundaries before general code quality. For a targeted re-review by the *same* reviewer, send only the finding, changed files, and affected checks since its previous review. Review on two axes — report them separately, never merge or rerank findings across axes (one axis must not mask the other):
+Return a compact handoff: changed files, completed/open tasks, verification commands and outcomes, and blockers. Include a failure excerpt only when it explains a blocker or required evidence. On interruption, also identify partial changes and the next check. Stop for scope changes, unresolved requirements, debugging without a new actionable hypothesis, or delegation infrastructure failure; report state rather than silently falling back to another execution mode.
 
-**Spec axis** — against the change artifacts. Quote the spec line for every finding:
-- Requirements/scenarios missing or only partially implemented.
-- Behavior in the diff nobody asked for (scope creep); specified behavior silently narrowed.
-- **Test validity**: every delta scenario has a test; assertions check behavior, not implementation details; no `.skip`/`.only`, swallowed assertions, or test files the runner never picks up.
-- **Sensitivity and proof strength**: for each core behavior, name the test that would go red if you broke it and the failure it exercises. Distinguish implemented, behaviorally tested, and verified at the promised boundary. A unit fake cannot alone prove a real process or network guarantee; report missing boundary evidence rather than promoting a nearby test into proof. A suite no obvious bug can break proves nothing.
-- **Evidence audit**: when red is applicable, it predates implementation, fails for the missing behavior rather than a fixture bug, and matches the task's `Verification:` clause. For preserved behavior, verify the stated regression failure mode instead.
-- **Planning consistency**: identify any required output that a task or its check rules out; quote the conflicting artifact lines. Do not downgrade an unresolved contradiction to a style note.
-- Requirement edges and project hard constraints that no scenario encodes (dependencies, compatibility, side effects).
+## 3. Review and verify together
 
-**Standards axis** — against the repo's documented standards (AGENTS.md etc.), plus the smell baseline below. A documented repo standard always overrides the baseline; baseline smells are labelled judgement calls, never hard violations; skip anything tooling already enforces.
+After the worker finishes and relinquishes the tree, dispatch a fresh-context reviewer. Supply the original contract paths, complete changed-file inventory including untracked additions, diff inspection instructions, worker verification claims, and relevant high-risk boundaries.
 
-- Mysterious Name → rename
-- Duplicated Code → extract the shared shape
-- Feature Envy → move the method onto the data
-- Data Clumps → bundle into a type
-- Primitive Obsession → give the concept a small type
-- Repeated Switches → polymorphism or one shared map
-- Shotgun Surgery → gather what changes together
-- Divergent Change → split so each module changes for one reason
-- Speculative Generality → delete; inline until a real need shows
-- Message Chains → hide the walk behind one method
-- Middle Man → cut the delegate
-- Refused Bequest → composition over inheritance
+The reviewer independently reads the original artifacts and current implementation. **Perform independent review and `/opsx-verify` in this same pass**, following that skill's completeness, correctness, and coherence checks. Reuse the parent's apply-instruction output; do not request the same instruction template again. Reread current artifacts rather than trusting a worker summary.
 
-Classify each finding separately from its severity: **contract blocker** (ambiguous or conflicting required behavior; pause for artifact update or user decision), **implementation defect** (fix now, including a required guarantee with inadequate proof), or **optional note** (may remain without changing the contract). A positive verdict with notes MUST NOT contain an unresolved contract blocker or a required boundary left unverified; a user decision that changes required behavior goes into the plan before work resumes. Normally resume the **same** `worker` for implementation defects and re-verification, then the **same** `reviewer` for targeted confirmation. For a clearly behavior-preserving, localized cleanup only, after the worker has finished and relinquished the worktree, the parent may make the patch and run focused checks; request reviewer confirmation if the edit affects behavior, security, a contract, or the reviewer asks for it. Do not force a fix or another review round solely for optional style notes. If the same dispute survives two rounds, stop and present both positions to the user for arbitration.
+Check required behavior, scope, design interfaces, valid scenario coverage, and project hard constraints. Prioritize compatibility with uncontrolled Pi behavior, launcher sequencing, instance generation/cleanup, resource filtering, and failure recovery where affected. A unit fake does not prove a promised process or external-interaction guarantee. Flag missing required boundary evidence even when the suite passes.
 
-### 4. Acceptance
+Inspect code and tests first, including whether scenario assertions detect the intended failure and the runner actually executes them. Run focused checks when needed to investigate a concrete concern; audit historical red evidence only when the task requires it, and do not routinely rerun the full suite. Skip generic smell catalogs and tooling-enforced style checks.
 
-Gate order — check cheap objective defects before deep review, then validate the final tree:
+Produce **one review/verification result** using `/opsx-verify`'s dimensions and severity format. Each actionable finding cites a file/line or scenario and is classified as:
+- **Contract blocker:** required behavior or artifacts conflict; parent routes to `/opsx-update` or the user.
+- **Implementation defect:** implementation, documentation, or required verification is inadequate; worker fixes it.
+- **Optional note:** no required behavior or project constraint is violated; no mandatory fix or review round.
 
-1. **Triage** — the parent checks checkbox completeness, missing artifacts, and focused verification on the current tree (targeted tests/typecheck as applicable). Objective defects go straight back to the worker before reviewer dispatch. Do not duplicate scenario coverage, sensitivity analysis, or evidence auditing in parent context; give candidate leads to the reviewer. A mechanical pass never discharges the reviewer.
-2. **Review** — run the section-3 loop. Contract blockers stop it for a plan update or user decision, not an `OK with notes` verdict.
-3. **Final-tree gate** — after the last edit or reviewer fix, the parent independently reruns the project's required mechanical checks (including its full suite when required) on that exact tree and records the result. Any later edit invalidates affected results. For OpenSpec team changes, run `openspec validate <change> --strict` **and complete `/opsx-verify`** before calling the change accepted; team review does not substitute for coherence verification. Avoid repeating an expensive full gate before review when focused checks can triage the diff. A commit or checked task list is not acceptance.
-4. Suggest `/opsx-archive` only when the project's archive gates are met and no contract blocker remains; never archive automatically.
+Unresolved contract blockers and missing required verification block acceptance regardless of report severity or a generic positive verdict. If final-acceptance tasks remain unchecked pending parent commands, report them as pending gates; do not claim the change is accepted or archive-ready.
 
-Deliver as accepted only when the reviewer passes, the worker's evidence is on record, and the final-tree gate including any required coherence verification passes. Otherwise report implementation progress and the outstanding gate, not completion. Optional notes may remain; changed required behavior must be reconciled in the plan rather than waived by a positive verdict. In solo `/opsx-apply`, do not skip the project's `/opsx-verify` coherence check.
+For implementation defects, resume the same worker with findings and affected checks, then the same reviewer with only the changed files and questions to confirm. Reopen broader review only when fixes change scope or invalidate earlier conclusions. If a disagreement needs a contract decision or further rounds produce no new evidence, escalate to the parent; optional style notes alone never force another round.
 
-**Measure the workflow, not just the result** — use available run metadata and the final handoff to note wall time, tokens/cost when available, timeouts or stalled cycles, review findings by class, and any deferred verification. Do not invent totals for parent work or create a mandatory reporting artifact. Compare these with later changes alongside escaped defects; lower cost alone is not evidence of improvement.
+## 4. Accept and deliver
 
-## Escalations (optional, on demand)
+The parent checks the combined review/verification result for required coverage and unresolved blockers, without repeating the reviewer's full scenario analysis. After the last edit, independently run the final mechanical gates required by the project and change. For source changes, include `npm run check` and `npm test`; run the applicable strict OpenSpec validation. Team review alone and strict validation alone do not replace the completed `/opsx-verify` result.
 
-- **tester/implementer split** — only when a task is too large for one context, or the confirmation-bias cost is high (core path). The parent first pins the interface contract (files, export names, signatures, error types), extracted from design.md if present, otherwise derived and backfilled via `/opsx-update`. `tester` is dispatched blind to the implementation; red evidence is recorded **before** the implementation lands. The checkbox is marked by whichever side runs full verification.
-- Architectural fork with multiple defensible branches → OpenSpec: resolve in the design artifact via `/opsx-update`, not mid-apply. Otherwise: consult `oracle` (bounded read-only critique) before finalizing the plan.
-- Lane infrastructure failure (launch/tooling/prompt runtime) → stop, report run/worktree state; no silent fallback to direct execution.
+Final-acceptance task checkboxes are updated by the parent only after the worker has relinquished the tree and their specified gates pass. If acceptance tasks need factual content beyond checkbox updates, assign that work before final checks. A checkbox-only completion update does not require a new code review; any later source, test, documentation, or contract edit invalidates affected results and requires the appropriate checks and reviewer follow-up. Recheck current task completeness and report the final disposition of previously pending verification gates.
+
+Confirm proposal Doc Impact and required ADR outputs, using the project's archive rules. Suggest `/opsx-archive` only when all required tasks and gates pass and no contract blocker remains. Never archive automatically. If a gate fails, report implementation progress and the outstanding gate rather than completion.
+
+Delivery includes the change, implemented scope, review/verification disposition, final check outcomes, and remaining optional notes. Available timing or cost metadata may be summarized; do not create a reporting artifact or invent totals.
+
+## Handoff templates
+
+### Worker
+
+```text
+Change, cwd, resolved artifact paths, apply context/guidance
+Assigned task IDs and write boundary
+Relevant project constraints and authoritative fact sources
+Verification commands and completion criteria
+Return: changed files, task status, checks, blockers
+Stop: contract conflict, added scope, or infrastructure failure
+```
+
+### Reviewer
+
+```text
+Change, cwd, resolved artifact paths, cached apply instructions
+Changed-file inventory and current diff/new-file inspection
+Worker verification claims and affected high-risk boundaries
+Read-only review + openspec-verify; one combined result
+Return: completeness/correctness/coherence, classified findings,
+checks performed, skipped checks with reasons, pending final gates
+```
