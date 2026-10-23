@@ -1,13 +1,13 @@
 ---
-name: team-workflow
-description: Execute pi-profile-switch OpenSpec changes with a worker and an independent reviewer. Use when the user explicitly requests team workflow or multi-agent execution for this project. OpenSpec supplies the plan; the reviewer also completes opsx-verify; the parent owns final acceptance.
+name: openspec-agents-flow
+description: Default multi-agent execution flow for pi-profile-switch OpenSpec apply. Load when the user invokes /opsx-apply or requests openspec apply, opsx apply, or openspec implement for this project, unless they explicitly request solo execution. OpenSpec supplies the plan; a worker implements, a reviewer also completes opsx-verify, and the parent owns final acceptance.
 ---
 
-# Team Workflow
+# OpenSpec Agents Flow
 
 ## Scope and sources
 
-Use this skill for **pi-profile-switch OpenSpec changes** after team execution has been explicitly authorized by the user or mandated by applicable instructions. Risk alone does not authorize delegation. Outside this project, stop using this skill and select the applicable workflow; do not impose these project rules elsewhere.
+Use this skill for **pi-profile-switch OpenSpec changes**. The user-level apply routing rule requires this flow when the user invokes `/opsx-apply` or requests `openspec apply`, `opsx apply`, or `openspec implement` for this project. That rule authorizes the default worker + reviewer execution; no separate team confirmation is needed. An explicit solo request takes precedence and uses ordinary `/opsx-apply` with the project's verification gates. Risk alone does not authorize delegation. Outside this project, stop using this skill and select the applicable workflow; do not impose these project rules elsewhere.
 
 The selected change's artifacts are the execution contract. Follow the project's `AGENTS.md` and `openspec/config.yaml`, the applicable `openspec-*` skills, and `pi-subagents` for delegation mechanics. Use OpenSpec's resolved paths and edit boundaries, including a selected store when applicable. Do not create a second plan, task ledger, evidence document, or workflow script merely to coordinate two agents.
 
@@ -25,7 +25,7 @@ Add workers only for independent tasks with exclusive file ownership or isolated
 
 ## 1. Start
 
-1. Follow `/opsx-apply` to select the change, check outstanding completed changes that require archive, resolve status and scope, and obtain apply instructions. Announce the selected change. Preserve CLI-controlled blocked states; `all_done` means task progress, not acceptance.
+1. Use `/opsx-apply`'s selection and preparation steps to check outstanding completed changes that require archive, resolve status and scope, and obtain apply instructions. Reuse any preparation already completed by the apply entry point; do not invoke the command recursively. Announce the selected change. Preserve CLI-controlled blocked states; `all_done` means task progress, not acceptance.
 2. Read the returned `contextFiles`, required `context`, and applicable `operationGuidance`. Obtain instructions once per change and artifact in the parent session, then reuse them in handoffs. Refresh status when needed and reread changed artifacts; cached task counts or prior file contents are not current evidence.
 3. Before dispatch, reconcile required outputs, scenarios, design interfaces, Doc Impact, and task `Verification:` clauses. Check for missing acceptance criteria, checks that reject required content, and unresolved product choices. A material conflict pauses execution for `/opsx-update` or the user. A coherent apply request does not require another plan approval.
 4. Assign the worker the remaining implementation tasks. Point to original sources rather than pasting artifacts or rewriting their requirements.
