@@ -1,11 +1,11 @@
 ---
 name: git-commit
-description: Two commit modes. Mode 1 (auto-commit) runs automatically every time the AI finishes modifying files — commit just those files locally and confirm in one line, never push. Mode 2 (manual commit) runs on explicit user request — commit the files changed in this task by default, or all worktree changes when the user says "commit all"; remind the user that push/PR are available but never do them unprompted. Use after any AI file edit, and when the user mentions committing code, pushing a feature branch, finishing a feature, syncing/rebasing main, or creating a PR.
+description: Two commit modes. Mode 1 (auto-commit) commits a complete unit of AI changes locally after relevant checks pass, preserving pre-existing user changes; confirm in one line, never push. Mode 2 (manual commit) runs on explicit user request — commit the files changed in this task by default, or all worktree changes when the user says "commit all"; remind the user that push/PR are available but never do them unprompted. Use before AI file edits to record existing changes and after a complete unit is verified, and when the user mentions committing code, pushing a feature branch, finishing a feature, syncing/rebasing main, or creating a PR.
 ---
 
 # Git Commit — Two Modes
 
-- **Mode 1 — auto-commit**: after each round of AI file modifications, commit those files locally. One-line confirmation, never push.
+- **Mode 1 — auto-commit**: after a complete unit of AI changes and its relevant checks pass, commit that unit locally. One-line confirmation, never push.
 - **Mode 2 — manual commit**: only on explicit user request. Default scope = files changed in this task; "commit all" (提交全部) = whole worktree.
 
 Push, rebase, and PR run only on explicit user request (Section 3) — a commit never implies them.
@@ -16,17 +16,26 @@ Forbidden always: `git push --force` / `--force-with-lease`, `git reset --hard`,
 
 Commit message (both modes): Conventional Commit `<type>: <summary>`; type ∈ `feat / fix / docs / style / refactor / perf / test / chore / build / ci`; summary one line, ≤50 chars, no trailing period.
 
-## Mode 1 — Auto-commit after file edits
+## Protect Existing Changes (both modes)
 
-Trigger: after each completed round of AI edits/writes. Skip silently if not a git work tree, detached HEAD, or no changes in the touched files.
+Before editing, inspect the worktree and index and record existing staged, unstaged, and untracked changes in files the task will touch. Before staging or committing, compare the final diff with that baseline; file ownership alone does not establish change ownership. Preserve the user's edits and index state.
 
-Scope = exactly the files just modified. The user's own dirty or staged files are left alone — never block on them, never include them.
+For auto-commit, stage and commit only files whose complete changes belong to the completed unit. If a touched file contains pre-existing or concurrent user changes, leave it untouched by staging/commit and report that auto-commit is blocked; do not split a required unit merely to commit its other files. Unrelated dirty or staged files do not block auto-commit and must remain outside it. If no reliable baseline was recorded for a mixed file, stop auto-commit rather than infer ownership. Manual requests may include user changes only within the explicitly authorized scope below.
+
+## Mode 1 — Auto-commit after a verified unit
+
+Trigger: a coherent unit is complete, including its required implementation, tests, fixtures, callers, and documentation, and the relevant project checks pass. A conversation turn or an individual file write is not a commit boundary. Use the user's requested checks or the cheapest relevant project validation; `git diff --check` is the minimum for documentation-only changes. If work is incomplete, checks fail or cannot run, preserve the worktree and report without committing.
+
+Skip silently if not a git work tree, detached HEAD, or no changes in the unit's files.
+
+After applying the existing-change protection and secrets gate, stage explicit paths, inspect their staged diff and run the whitespace check for those paths. Commit only that unit:
 
 ```bash
-git add -- <files modified this round>
-git diff --cached --quiet -- <files modified this round>   # nothing → skip
-git diff --cached --check                                  # fail → one-line warning, no commit
-git commit -m "<message>" -- <files modified this round>   # pathspec keeps user pre-staged content out
+git add -- <unit files>
+git diff --cached --quiet -- <unit files>   # nothing → skip
+git diff --cached -- <unit files>
+git diff --cached --check -- <unit files>   # failure → report, no commit
+git commit -m "<message>" -- <unit files>
 ```
 
 Report — one line only, no detailed report:
@@ -39,7 +48,7 @@ Report — one line only, no detailed report:
 
 Scope:
 
-- **Default**: files changed during this task, plus paths the user names. Dirty/untracked files outside scope → report them, let the user decide.
+- **Default**: AI changes made during this task, plus changes the user explicitly requests. Naming a path does not authorize unrelated pre-existing edits within it; clarify inclusion when changes are mixed. Dirty/untracked files outside scope → report them, let the user decide.
 - **"commit all"**: everything in `git status --short`, still staged as explicit paths.
 
 Procedure:
