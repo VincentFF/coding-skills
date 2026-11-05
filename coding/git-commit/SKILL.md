@@ -1,6 +1,6 @@
 ---
 name: git-commit
-description: Two commit modes. Mode 1 (auto-commit) commits a complete unit of AI changes after relevant checks pass, preserving pre-existing user changes, then backs up eligible feature branches by pushing. Mode 2 (manual commit) runs on explicit user request — commit the files changed in this task by default, or all worktree changes when the user says "commit all"; apply the same feature-branch backup rules; create PRs only on explicit request. Use before AI file edits to record existing changes and after a complete unit is verified, and when the user mentions committing code, pushing a feature branch, finishing a feature, syncing/rebasing main, or creating a PR.
+description: Two commit modes. Mode 1 (auto-commit) commits a complete unit of AI changes after relevant checks pass, preserving pre-existing user changes, then backs up eligible feature branches by pushing. Mode 2 (manual commit) runs on explicit user request — commit the files changed in this task by default, or all worktree changes when the user says "commit all"; apply the same feature-branch backup rules; create PRs only on explicit request. Use before development in a Git repository for remote synchronization and merged-branch cleanup, before AI file edits to record existing changes, after a complete unit is verified, and for commit, push, sync/rebase, or PR requests.
 ---
 
 # Git Commit — Two Modes
@@ -15,6 +15,28 @@ Forbidden always: `git push --force` / `--force-with-lease`, `git reset --hard`,
 **Secrets gate (both modes)**: scan staged file names and diff for `.env`, private keys/certs, tokens, passwords → stop, report paths only, never values. Run the project's scanner (gitleaks, pre-commit, etc.) if one exists.
 
 Commit message (both modes): Conventional Commit `<type>: <summary>`; type ∈ `feat / fix / docs / style / refactor / perf / test / chore / build / ci`; summary one line, ≤50 chars, no trailing period.
+
+## Before Development
+
+Run once at task startup, before editing repository files; repeat when resuming after remote changes are reported. Discussion-only requests need no fetch or cleanup. User-requested offline or local-only work skips remote operations; report that freshness and PR status are unverified.
+
+1. Inspect the worktree, index, branch, upstream, and linked worktrees. Resolve the remote from the upstream, else the user-specified remote, else the sole remote. Fetch it with `git fetch <remote> --prune` and establish its default branch from remote metadata, verifying with `git ls-remote --symref <remote> HEAD` when uncertain. An ambiguous remote/default, authentication failure, or failed fetch stops synchronization; report the blocker before editing from an unverified base.
+2. Check the current feature branch and local feature branches whose upstream disappeared for merged PRs under the cleanup rules below. A missing upstream alone does not prove completion. Keep open or unmerged branches.
+3. For new work, use the fetched default branch as the base unless the user or repository specifies another base. Fast-forward a clean local default branch when it is only behind; preserve local commits if it is ahead or diverged and report them. Create the task branch directly from the verified remote base when local history cannot be advanced safely. Follow repository branch naming and isolation rules.
+4. For continuing work, compare with its fetched upstream. If only behind and the worktree/index are clean, use `git merge --ff-only <upstream>`. If ahead, retain local commits; if diverged, report and obtain direction before integrating. Also compare with the fetched base: report missing base changes; merging or rebasing them still requires an explicit request. A dirty worktree or a branch used by another worktree prevents automatic switching or integration. Preserve it and resolve isolation before editing.
+
+Report the selected branch/base and any remaining divergence. Do not use an unrestricted `git pull`, automatically rebase, stash, reset, or force-push to make startup succeed.
+
+## Merged Local Branch Cleanup
+
+At startup and when a requested PR operation confirms a merge, automatically delete completed local feature branches only after all checks below pass. This authorizes local cleanup under these conditions; it does not authorize remote branch deletion or deleting worktrees.
+
+- Verify the exact repository, head branch, base branch, and merged PR through the hosting service. Open or merely closed PRs are not eligible. If the service or authentication is unavailable, skip cleanup and report it.
+- Require the local branch tip to equal the merged PR's recorded head commit, and require the PR's merge/squash commit to be reachable from the fetched base. This handles squash and rebase merges without relying on `git branch --merged`. Extra local commits, ambiguous PR matches, or unavailable commit evidence mean retain the branch.
+- Preserve the default branch, user-protected branches, and branches checked out in other worktrees. If the completed branch is current, require a clean worktree/index and switch to the verified base before deletion. For ongoing work on that branch, retain it and report the merged PR instead.
+- Prefer `git branch -d -- <branch>`. If Git rejects it solely because squash/rebase merging changed ancestry, `git branch -D -- <branch>` is allowed only with the verified PR-head and base-reachability evidence above. Never bulk-force-delete branches. Report deleted branches and reasons for retaining candidates.
+
+These are agent workflow instructions, not a background watcher: cleanup happens when the skill runs and can verify the merge.
 
 ## Protect Existing Changes (both modes)
 
