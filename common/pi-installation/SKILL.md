@@ -58,7 +58,7 @@ Layout: real files in the repo → symlinked into `~/.agents` → symlinked into
 
 ```bash
 REPO=~/.config/coding-skills
-SKILLS="code-review codebase-design confluence-pages diagnosing-bugs \
+SKILLS="code-review codebase-design diagnosing-bugs \
 doc-writing domain-modeling git-commit grill-me grill-with-docs \
 grilling research writing-great-skills"
 mkdir -p ~/.agents/skills ~/.pi/agent/skills
@@ -246,7 +246,7 @@ Then check `ls ~/.pi/agent/skills/` — package-skill sync may have wiped the se
 Expected = `$SKILLS` (section 3) plus machine-kept external skills in `SKILLS_KEEP`; everything else under `~/.agents/skills/` is drift and deleted:
 
 ```bash
-SKILLS="code-review codebase-design confluence-pages diagnosing-bugs \
+SKILLS="code-review codebase-design diagnosing-bugs \
 doc-writing domain-modeling git-commit grill-me grill-with-docs \
 grilling research writing-great-skills"   # same as section 3
 SKILLS_KEEP="find-skills gitops-cluster-debug gitops-knowledge gitops-repo-audit alicloud"
