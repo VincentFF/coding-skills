@@ -1,0 +1,9 @@
+# Behavior evaluation
+
+Use an existing eval suite when it covers the proposed change. Otherwise start with a few representative user requests and the failure that originally justified the instruction, if known. State expected behavior before running. Include a real in-scope request, a nearby out-of-scope request for routing changes, and any case where the rule protects a required result or constraint. Measure triggering separately from execution. Use normal discovery for routing cases and explicit invocation when isolating execution.
+
+For each target that consumes the changed instructions, run the same cases with the current and candidate versions. Use a fresh session and equivalent workspace snapshot, permissions, tools and model settings per run. Change only the audited material. Add a disabled-skill or removed-rule baseline when deciding whether the material has value at all and when that baseline can be isolated. Use scratch workspaces for edits and eval fixtures that avoid real messages, deployments and other external side effects. Repeat borderline or nondeterministic cases if the available budget allows.
+
+Prefer observable checks such as the skill actually loaded, required files or outputs produced, existing tests passed, and required constraints followed. Use traces when available. Report trigger behavior as unknown if it cannot be observed. Measure tokens or latency only if the harness exposes comparable data. Keep results per harness and model, with case counts and any failures. A verified result in one combination leaves the other combinations unverified.
+
+Keep or restore any instruction whose removal causes a material regression. When evidence is incomplete, record the smallest repro case, the expected result, the comparison to run and the missing target or capability. Treat runs as evidence only for the behavior they exercise.
